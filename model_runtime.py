@@ -246,6 +246,35 @@ class ModelRuntime:
         else:
             model.to(device=target, dtype=dtype)
             input_device = target
+
+        first_linear = next(
+            (layer for layer in model.head.modules() if isinstance(layer, torch.nn.Linear)),
+            None,
+        )
+        if first_linear is None:
+            raise RuntimeError("JEV decision head does not contain a linear layer")
+
+        def align_head_input(module: torch.nn.Module, inputs: tuple[Any, ...]) -> tuple[Any, ...]:
+            if not inputs or not isinstance(inputs[0], torch.Tensor):
+                return inputs
+            value = inputs[0]
+            expected_features = first_linear.in_features
+            actual_features = value.shape[-1]
+            if actual_features != expected_features:
+                raise RuntimeError(
+                    "JEV hidden-size mismatch: backbone produced "
+                    f"{actual_features} features but decision head expects "
+                    f"{expected_features}. Verify the model bundle and backbone are a matching pair."
+                )
+            weight = first_linear.weight
+            if value.device != weight.device or value.dtype != weight.dtype:
+                value = value.to(device=weight.device, dtype=weight.dtype)
+                return (value, *inputs[1:])
+            return inputs
+
+        # The backbone's final activation can differ from the separately
+        # loaded JEV head in device/dtype, especially with multi-GPU dispatch.
+        model.head.register_forward_pre_hook(align_head_input)
         model.eval()
 
         self.model = OpenJev(
@@ -271,6 +300,9 @@ class ModelRuntime:
             "device": ", ".join(mapped_devices) if mapped_devices else str(input_device),
             "devices": mapped_devices or [str(input_device)],
             "dtype": str(dtype).replace("torch.", ""),
+            "head_device": str(first_linear.weight.device),
+            "head_dtype": str(first_linear.weight.dtype).replace("torch.", ""),
+            "head_input_features": first_linear.in_features,
             "model_kind": self.settings.model_kind,
             "configured_inputs": list(self.settings.model_inputs),
             "supported_inputs": list(self.supported_inputs),
