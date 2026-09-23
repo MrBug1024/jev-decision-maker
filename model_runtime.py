@@ -272,8 +272,25 @@ class ModelRuntime:
                 return (value, *inputs[1:])
             return inputs
 
+        def align_option_mask(
+            module: torch.nn.Module, inputs: tuple[Any, ...]
+        ) -> tuple[Any, ...]:
+            # DecisionEncoder.forward receives (input_ids, attention_mask,
+            # opt_pos, opt_mask, q_pos, seg). Its final masked_fill runs on
+            # the decision-head device, while OpenJev creates opt_mask on the
+            # input/embedding device.
+            mask_index = 3
+            if len(inputs) <= mask_index or not isinstance(inputs[mask_index], torch.Tensor):
+                return inputs
+            mask = inputs[mask_index]
+            head_device = first_linear.weight.device
+            if mask.device != head_device:
+                return (*inputs[:mask_index], mask.to(device=head_device), *inputs[mask_index + 1 :])
+            return inputs
+
         # The backbone's final activation can differ from the separately
         # loaded JEV head in device/dtype, especially with multi-GPU dispatch.
+        model.register_forward_pre_hook(align_option_mask)
         model.head.register_forward_pre_hook(align_head_input)
         model.eval()
 
