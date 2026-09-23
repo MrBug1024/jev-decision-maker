@@ -1,60 +1,73 @@
 #!/bin/bash
-# kill_service.sh - 精确杀掉 0.0.0.0:8019 的 gunicorn 服务
+# kill_jev_8019.sh —— 只杀 venv=jev-decision-maker 且 cwd=~/work/jev-decision-maker 的 8019 服务
+set -u
 
-APP_NAME="server:app"
-PORT="8019"
-WORKER_MODULE="uvicorn.workers.UvicornWorker"
+PORT=8019
+VENV_MARK="jev-decision-maker"                    # 出现在 /proc/PID/exe 路径中
+PROJECT_DIR="$HOME/work/jev-decision-maker"       # 进程 cwd 必须在此目录下
+APP_MARK="server:app"                             # 命令行标记（辅助校验）
 
-echo "==> 正在查找目标进程..."
+# ---- 1. 优先从端口反查 ----
+echo "==> 从端口 $PORT 反查监听进程..."
+PIDS=$(sudo ss -lntp 2>/dev/null \
+    | awk -v p=":${PORT}\$" '$4 ~ p {print $6}' \
+    | grep -oP 'pid=\K[0-9]+' | sort -u)
 
-# 1. 找到监听该端口的 master 进程 PID
-MASTER_PID=$(ss -lntp 2>/dev/null | awk -v p=":$PORT" '$4 ~ p {print $6}' \
-    | grep -oP 'pid=\K[0-9]+' | head -n1)
-
-if [ -z "$MASTER_PID" ]; then
-    echo "端口 $PORT 上未找到监听进程，尝试通过命令行匹配..."
-    MASTER_PID=$(pgrep -f "gunicorn.*${APP_NAME}" | head -n1)
+# 端口没监听但进程可能还在（僵死），用 venv+cwd 兜底反查
+if [ -z "$PIDS" ]; then
+    echo "端口无监听，改用 venv+cwd 反查..."
+    PIDS=$(pgrep -f "$APP_MARK" | while read p; do
+        exe=$(readlink /proc/$p/exe 2>/dev/null)
+        cwd=$(readlink /proc/$p/cwd 2>/dev/null)
+        [[ "$exe" == *"$VENV_MARK"* && "$cwd" == "$PROJECT_DIR"* ]] && echo "$p"
+    done | sort -u)
 fi
 
-if [ -z "$MASTER_PID" ]; then
-    echo "未找到目标服务，退出。"
-    exit 0
-fi
+[ -z "$PIDS" ] && { echo "未找到目标服务，退出。"; exit 0; }
+echo "==> 候选 PID: $PIDS"
 
-# 2. 通过 master PID 找到整个进程组（gunicorn 的 master + workers 是父子关系）
-echo "==> 找到 master 进程 PID: $MASTER_PID"
-echo "==> 进程树如下:"
-pstree -ap "$MASTER_PID" 2>/dev/null || ps --ppid "$MASTER_PID" -o pid,ppid,cmd
-
-# 3. 收集所有子进程 PID
-CHILD_PIDS=$(pgrep -P "$MASTER_PID")
-
-# 4. 先优雅停止 master（gunicorn 会通知 worker 退出）
-echo "==> 发送 TERM 信号..."
-kill -TERM "$MASTER_PID" 2>/dev/null
-
-# 5. 等待最多 10 秒
-for i in $(seq 1 10); do
-    if ! kill -0 "$MASTER_PID" 2>/dev/null; then
-        echo "==> 服务已优雅退出。"
-        exit 0
+# ---- 2. 三重校验，任何一条不匹配就中止 ----
+echo "==> 校验身份（exe / cwd / cmdline）..."
+BAD=0
+for pid in $PIDS; do
+    exe=$(sudo readlink /proc/$pid/exe 2>/dev/null)
+    cwd=$(sudo readlink /proc/$pid/cwd 2>/dev/null)
+    cmd=$(sudo tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null)
+    ok=1
+    [[ "$exe" == *"$VENV_MARK"* ]]       || ok=0
+    [[ "$cwd" == "$PROJECT_DIR"* ]]       || ok=0
+    [[ "$cmd" == *"$APP_MARK"* ]]         || ok=0
+    if [ $ok -eq 1 ]; then
+        echo "  [OK] pid=$pid  exe=$exe  cwd=$cwd"
+    else
+        echo "  [!!] pid=$pid  exe=$exe  cwd=$cwd  cmd=$cmd"
+        BAD=1
     fi
+done
+[ $BAD -eq 1 ] && { echo "存在不匹配进程，为安全起见中止。"; exit 1; }
+
+# ---- 3. 找 master（PPID 不在候选集合里的那个） ----
+MASTERS=""
+for pid in $PIDS; do
+    ppid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+    echo "$PIDS" | grep -qw "$ppid" || MASTERS="$MASTERS $pid"
+done
+echo "==> master PID:$MASTERS"
+
+# ---- 4. 优雅停止 ----
+echo "==> 发送 TERM ..."
+sudo kill -TERM $MASTERS
+for i in $(seq 1 15); do
+    alive=0
+    for pid in $MASTERS; do sudo kill -0 "$pid" 2>/dev/null && alive=1; done
+    [ $alive -eq 0 ] && { echo "==> 已优雅退出。"; exit 0; }
     sleep 1
 done
 
-# 6. 还活着就强杀 master + 所有子进程
-echo "==> 超时未退出，强制 kill -9..."
-kill -9 "$MASTER_PID" 2>/dev/null
-for pid in $CHILD_PIDS; do
-    kill -9 "$pid" 2>/dev/null
-done
-
-# 7. 最终确认
+# ---- 5. 强杀 ----
+echo "==> 超时，kill -9 ..."
+sudo kill -9 $MASTERS
 sleep 1
-if ss -lntp 2>/dev/null | grep -q ":$PORT "; then
-    echo "警告：端口 $PORT 仍被占用！"
-    ss -lntp | grep ":$PORT "
-    exit 1
-fi
-
-echo "==> 全部清理完成。"
+sudo ss -lntp | grep -q ":${PORT}[[:space:]]" \
+    && { echo "端口仍被占用："; sudo ss -lntp | grep ":${PORT}[[:space:]]"; exit 1; } \
+    || echo "==> 端口已释放，完成。"
