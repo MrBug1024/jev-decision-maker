@@ -7,13 +7,6 @@ import threading
 from pathlib import Path
 from typing import Any
 
-import torch
-from huggingface_hub import snapshot_download
-from safetensors.torch import load_file
-from transformers import AutoModel, AutoTokenizer
-from typed_decisions.encoder import Collator, DecisionEncoder
-from typed_decisions.open_jev import OpenJev
-
 from config import Settings
 
 
@@ -35,11 +28,31 @@ class ModelRuntime:
             "device": "not_loaded",
             "devices": [],
             "dtype": None,
+            "model_kind": settings.model_kind,
+            "configured_inputs": list(settings.model_inputs),
+            "supported_inputs": [],
             "error": None,
         }
 
+    @property
+    def supported_inputs(self) -> tuple[str, ...]:
+        """Return inputs backed by an implemented runtime adapter.
+
+        The current typed-decisions adapter is text-only. Keeping this separate
+        from the configured inputs prevents a future Omni configuration from
+        advertising media inference before its loader is actually installed.
+        """
+        if self.settings.model_kind == "typed_decisions":
+            return ("text",) if "text" in self.settings.model_inputs else ()
+        return ()
+
+    def supports_input_type(self, input_type: str) -> bool:
+        return input_type in self.supported_inputs
+
     @staticmethod
     def _device(value: Any) -> torch.device:
+        import torch
+
         if isinstance(value, torch.device):
             return value
         if isinstance(value, int):
@@ -49,6 +62,8 @@ class ModelRuntime:
         return torch.device(str(value))
 
     def _target_device(self) -> torch.device:
+        import torch
+
         mode = self.settings.model_device
         if mode not in {"auto", "cpu", "cuda"}:
             raise ValueError("OPEN_JEV_MODEL_DEVICE must be auto, cpu, or cuda")
@@ -61,6 +76,8 @@ class ModelRuntime:
         return torch.device("cpu")
 
     def _dtype(self, target: torch.device) -> torch.dtype:
+        import torch
+
         value = self.settings.model_dtype
         explicit = {
             "float32": torch.float32,
@@ -92,6 +109,8 @@ class ModelRuntime:
         return torch.float32
 
     def _max_memory(self) -> dict[int | str, int | str]:
+        import torch
+
         if not torch.cuda.is_available():
             return {"cpu": "32GiB"}
         reserve = int(self.settings.gpu_memory_reserve_gib * 1024**3)
@@ -105,6 +124,8 @@ class ModelRuntime:
         return limits
 
     def _resolve_model_dir(self) -> str:
+        from huggingface_hub import snapshot_download
+
         source = self.settings.model_id
         local_source = Path(source).expanduser()
         if not local_source.is_absolute():
@@ -141,6 +162,8 @@ class ModelRuntime:
 
     @staticmethod
     def _input_device(model: torch.nn.Module) -> torch.device:
+        import torch
+
         try:
             embedding = model.get_input_embeddings()
             device = next(embedding.parameters()).device
@@ -157,6 +180,9 @@ class ModelRuntime:
         target: torch.device,
         dtype: torch.dtype,
     ) -> tuple[torch.nn.Module, torch.device, str]:
+        import torch
+        from transformers import AutoModel
+
         kwargs: dict[str, Any] = {
             "attn_implementation": config.get("attn_implementation", "eager"),
             "dtype": dtype,
@@ -189,6 +215,12 @@ class ModelRuntime:
         return backbone, target, "single_device"
 
     def load(self) -> OpenJev:
+        import torch
+        from safetensors.torch import load_file
+        from transformers import AutoTokenizer
+        from typed_decisions.encoder import Collator, DecisionEncoder
+        from typed_decisions.open_jev import OpenJev
+
         target = self._target_device()
         dtype = self._dtype(target)
         model_dir = self._resolve_model_dir()
@@ -239,6 +271,9 @@ class ModelRuntime:
             "device": ", ".join(mapped_devices) if mapped_devices else str(input_device),
             "devices": mapped_devices or [str(input_device)],
             "dtype": str(dtype).replace("torch.", ""),
+            "model_kind": self.settings.model_kind,
+            "configured_inputs": list(self.settings.model_inputs),
+            "supported_inputs": list(self.supported_inputs),
             "error": None,
         }
         return self.model
@@ -249,8 +284,33 @@ class ModelRuntime:
         with self._inference_slots:
             return self.model.decide(state, questions)
 
+    def test_decide(
+        self,
+        input_type: str,
+        situation: str,
+        questions: list[dict[str, Any]],
+        media: bytes | None = None,
+        filename: str | None = None,
+        content_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run the console test request through the active model adapter."""
+        if not self.supports_input_type(input_type):
+            configured = ", ".join(self.settings.model_inputs) or "none"
+            raise RuntimeError(
+                f"当前模型适配器不支持 {input_type} 输入；"
+                f"配置能力为 {configured}，已实现能力为 text。"
+            )
+        # Media arguments are intentionally part of the adapter contract. The
+        # typed-decisions model does not consume them because it is text-only.
+        return self.decide(situation, questions)
+
     def status(self) -> dict[str, Any]:
         return dict(self._status)
 
     def set_error(self, error: str) -> None:
-        self._status = {**self._status, "ready": False, "error": error}
+        self._status = {
+            **self._status,
+            "ready": False,
+            "supported_inputs": list(self.supported_inputs),
+            "error": error,
+        }

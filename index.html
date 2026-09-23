@@ -43,8 +43,11 @@
   .auth-tab.active { color: var(--teal-dark); border-color: var(--teal); }
   .field { margin: 14px 0; }
   .field label { display: block; margin-bottom: 7px; color: #49565e; font-size: 12px; font-weight: 800; letter-spacing: .02em; }
-  .field input { width: 100%; height: 44px; padding: 0 13px; border: 1px solid var(--line); background: #fbfcfb; color: var(--ink); outline: none; }
-  .field input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(8,127,120,.12); }
+  .field input, .field textarea, .field select { width: 100%; border: 1px solid var(--line); background: #fbfcfb; color: var(--ink); outline: none; }
+  .field input { height: 44px; padding: 0 13px; }
+  .field textarea { min-height: 118px; padding: 12px 13px; resize: vertical; line-height: 1.55; }
+  .field select { height: 44px; padding: 0 11px; }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(8,127,120,.12); }
   .btn { min-height: 42px; border: 1px solid transparent; padding: 0 16px; font-weight: 800; font-size: 13px; transition: transform .15s ease, background .15s ease; }
   .btn:hover { transform: translateY(-1px); }
   .btn-primary { background: var(--teal); color: #fff; }
@@ -128,6 +131,55 @@
   .step-number { width: 24px; height: 24px; flex: 0 0 24px; display: grid; place-items: center; background: var(--coral-soft); color: var(--coral); font-size: 11px; font-weight: 900; }
   .guide-step strong { display: block; margin-bottom: 4px; font-size: 12px; }
   .guide-step p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .test-layout { display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(340px, .94fr); gap: 17px; align-items: start; }
+  .test-panel { padding: 22px; }
+  .test-panel .panel-title { margin-bottom: 19px; }
+  .test-capability { color: var(--muted); font-size: 11px; }
+  .segmented { display: flex; flex-wrap: wrap; gap: 7px; }
+  .segment { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 12px; font-weight: 750; }
+  .segment::before { content: ''; width: 9px; height: 9px; border: 1px solid #aebbb8; border-radius: 50%; }
+  .segment.active { border-color: var(--teal); background: var(--teal-soft); color: var(--teal-dark); }
+  .segment.active::before { border: 3px solid var(--teal); background: #fff; }
+  .segment:hover { border-color: var(--teal); }
+  .upload-field.hidden { display: none; }
+  .upload-drop { min-height: 150px; display: grid; place-items: center; padding: 18px; border: 1px dashed #b8cbc6; background: #fbfdfc; color: var(--muted); text-align: center; transition: border-color .15s ease, background .15s ease; }
+  .upload-drop:hover, .upload-drop.dragging { border-color: var(--teal); background: var(--teal-soft); }
+  .upload-icon { display: block; margin-bottom: 8px; color: var(--teal); font-size: 25px; }
+  .upload-drop strong { display: block; color: var(--ink); font-size: 12px; }
+  .upload-drop span { display: block; margin-top: 5px; font-size: 11px; }
+  .upload-drop input { display: none; }
+  .file-preview { margin-top: 10px; padding: 10px; border: 1px solid var(--line); background: #f3f6f5; }
+  .file-preview img, .file-preview video { display: block; width: 100%; max-height: 250px; object-fit: contain; background: #e4ebe8; }
+  .file-preview audio { width: 100%; }
+  .file-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--muted); font-size: 11px; }
+  .file-meta strong { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+  .text-link { border: 0; background: transparent; color: var(--teal-dark); font-size: 11px; font-weight: 800; }
+  .test-question-grid { grid-template-columns: minmax(0, 1fr) 150px; gap: 13px; }
+  .test-question-grid .field { margin-bottom: 0; }
+  .test-submit { width: 100%; margin-top: 19px; background: var(--coral); }
+  .test-submit:hover { background: #bd553e; }
+  .test-submit[disabled] { opacity: .62; cursor: wait; transform: none; }
+  .test-message { min-height: 21px; margin-top: 11px; color: var(--coral); font-size: 12px; line-height: 1.5; }
+  .result-empty { min-height: 330px; display: grid; place-items: center; padding: 26px; color: var(--muted); text-align: center; font-size: 12px; }
+  .result-empty strong { display: block; margin-bottom: 6px; color: var(--ink); font-size: 14px; }
+  .result-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 21px; }
+  .result-stat { padding: 12px; background: #f3f6f5; border: 1px solid var(--line); }
+  .result-stat label { display: block; color: var(--muted); font-size: 10px; font-weight: 800; }
+  .result-stat strong { display: block; margin-top: 7px; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+  .probability-list { display: grid; gap: 13px; }
+  .probability-head { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 12px; font-weight: 750; }
+  .probability-head span:last-child { color: var(--teal-dark); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .probability-track { height: 8px; margin-top: 6px; overflow: hidden; background: #e6eeeb; }
+  .probability-fill { height: 100%; background: var(--teal); transition: width .35s ease; }
+  .result-note { margin-top: 17px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .result-json { max-height: 260px; margin: 16px 0 0; padding: 14px; overflow: auto; background: #183737; color: #d8eeea; font-size: 10px; line-height: 1.6; }
+  .test-examples { margin-top: 17px; overflow: hidden; }
+  .example-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .example-item { padding: 16px 18px; border-top: 1px solid var(--line); cursor: pointer; }
+  .example-item:nth-child(-n+2) { border-top: 0; }
+  .example-item:hover { background: #f6faf8; }
+  .example-item strong { display: block; font-size: 12px; }
+  .example-item p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
   @media (max-width: 860px) {
     .auth-shell { grid-template-columns: 1fr; }
     .auth-intro { display: none; }
@@ -151,6 +203,10 @@
     .key-prefix, .key-date { grid-column: 1; }
     .key-action { grid-column: 2; grid-row: 1 / span 3; }
     .new-key { grid-template-columns: 1fr; }
+    .test-layout { grid-template-columns: 1fr; }
+    .test-question-grid { grid-template-columns: 1fr; }
+    .result-summary, .example-list { grid-template-columns: 1fr; }
+    .example-item:nth-child(2) { border-top: 1px solid var(--line); }
   }
 </style>
 </head>
@@ -191,6 +247,7 @@
     <div class="brand"><span class="brand-mark">J</span><span class="brand-text">JEV<small>MODEL GATEWAY</small></span></div>
     <div class="nav-label">Workspace</div>
     <button class="nav-btn active" data-view="overview"><span>⌂</span><em>总览</em></button>
+    <button class="nav-btn" data-view="test"><span>◇</span><em>模型测试</em></button>
     <button class="nav-btn" data-view="keys"><span>⌁</span><em>访问 Key</em></button>
     <button class="nav-btn" data-view="guide"><span>↗</span><em>MCP 接入</em></button>
     <div class="sidebar-foot">
@@ -209,13 +266,35 @@
           <div class="panel metric"><div class="metric-label">活跃 Key</div><div id="metricKeys" class="metric-value">0</div><div class="metric-sub">仅属于当前账户</div></div>
         </div>
         <div class="grid two" style="margin-top:17px">
-          <div class="panel panel-pad"><div class="panel-title"><h2>模型状态</h2><span id="modelBadge" class="badge"><span class="dot"></span> 已就绪</span></div><div class="model-card"><div class="model-icon">◎</div><div><div class="model-name">open-jev-deberta-v3-large</div><div class="model-id">com-kotobalabs/open-jev-deberta-v3-large</div></div></div><p id="modelMessage" class="helper">模型以单实例方式加载，所有 MCP 请求共享同一个推理进程。</p></div>
+          <div class="panel panel-pad"><div class="panel-title"><h2>模型状态</h2><span id="modelBadge" class="badge"><span class="dot"></span> 已就绪</span></div><div class="model-card"><div class="model-icon">◎</div><div><div id="modelName" class="model-name">open-jev-deberta-v3-large</div><div id="modelId" class="model-id">com-kotobalabs/open-jev-deberta-v3-large</div></div></div><p id="modelMessage" class="helper">模型以单实例方式加载，所有 MCP 请求共享同一个推理进程。</p></div>
           <div class="panel panel-pad"><div class="panel-title"><h2>MCP 服务端点</h2><button class="icon-btn" data-copy="mcpEndpoint" title="复制端点">⧉</button></div><div class="endpoint"><code id="mcpEndpoint"></code></div><p class="helper">将此地址与下方生成的 Key 一起配置到 MCP 客户端。</p></div>
         </div>
         <div class="grid two" style="margin-top:17px">
           <div class="panel panel-pad"><div class="panel-title"><h2>快速接入</h2><button class="icon-btn" data-go="guide" title="查看完整接入说明">↗</button></div><pre id="quickCode" class="code-block"><code id="quickCodeText"></code><button class="icon-btn code-copy" data-copy="quickCodeText" title="复制命令">⧉</button></pre></div>
           <div class="panel panel-pad"><div class="panel-title"><h2>能力范围</h2></div><div class="guide-step"><div class="step-number">A</div><div><strong>Choice 分类</strong><p>从多个标签中选择最合适的结果，并返回概率分布。</p></div></div><div class="guide-step"><div class="step-number">B</div><div><strong>Score 评分</strong><p>基于有序选项给出连续分数与置信度。</p></div></div><div class="guide-step"><div class="step-number">C</div><div><strong>Noul 判断</strong><p>对一个是非陈述返回为真的概率。</p></div></div></div>
         </div>
+      </section>
+
+      <section id="view-test" class="view">
+        <div class="view-head"><div><div class="eyebrow">Playground</div><h1>模型测试</h1><p>用和实际业务一致的输入快速验证模型结果。控制台测试接口需要登录，外部调用仍统一走 MCP。</p></div><span id="testReadyBadge" class="badge"><span class="dot"></span> 文本推理</span></div>
+        <div class="test-layout">
+          <div class="panel test-panel">
+            <div class="panel-title"><div><h2>输入</h2><p style="margin-top:5px">选择输入类型后填写场景与判断问题。</p></div><span id="testCapability" class="test-capability">已实现：text</span></div>
+            <div class="field"><label>输入类型</label><div class="segmented" role="group" aria-label="输入类型"><button type="button" class="segment active" data-input-type="text">text</button><button type="button" class="segment" data-input-type="image">image</button><button type="button" class="segment" data-input-type="audio">audio</button><button type="button" class="segment" data-input-type="video">video</button></div></div>
+            <div id="uploadField" class="field upload-field hidden"><label id="uploadLabel" for="mediaFile">媒体文件</label><div id="uploadDrop" class="upload-drop" tabindex="0"><input id="mediaFile" type="file"><div><span class="upload-icon">↥</span><strong>将文件拖到这里，或点击选择</strong><span id="uploadHint">支持模型声明的媒体格式</span></div></div><div id="filePreview" class="file-preview hidden"></div></div>
+            <div class="field"><label for="testSituation">Situation</label><textarea id="testSituation" maxlength="16000" placeholder="模型需要知道的背景信息。例如：客户的订单到货时损坏，要求退款。"></textarea></div>
+            <div class="grid test-question-grid"><div class="field"><label for="testQuestion">Question</label><input id="testQuestion" maxlength="4000" placeholder="应该采取哪种处理方式？"></div><div class="field"><label for="testQuestionType">类型</label><select id="testQuestionType"><option value="choice">Choice</option><option value="score">Score</option><option value="yes_no">Yes / No</option></select></div></div>
+            <div id="optionsField" class="field"><label for="testOptions">Options，每行一个</label><textarea id="testOptions" placeholder="退款\n补充信息\n升级处理"></textarea></div>
+            <button id="testSubmit" class="btn btn-primary test-submit" type="button">Decide</button>
+            <div id="testMessage" class="test-message"></div>
+          </div>
+          <div class="panel test-panel">
+            <div class="panel-title"><div><h2>Probabilities</h2><p style="margin-top:5px">模型返回的结构化判断结果</p></div><span id="resultBadge" class="badge">等待测试</span></div>
+            <div id="resultEmpty" class="result-empty"><div><strong>结果会显示在这里</strong><span>填写左侧表单后点击 Decide。</span></div></div>
+            <div id="resultContent" class="hidden"><div id="resultSummary" class="result-summary"></div><div id="probabilityList" class="probability-list"></div><p id="resultNote" class="result-note"></p><details><summary>查看原始 JSON</summary><pre id="resultJson" class="result-json"></pre></details></div>
+          </div>
+        </div>
+        <div class="panel test-examples"><div class="panel-title" style="padding:20px 20px 3px;margin-bottom:0"><div><h2>Examples</h2><p style="margin-top:5px">点击示例填充测试表单。</p></div></div><div class="example-list"><div class="example-item" data-example="meeting"><strong>会议是否已经开始？</strong><p>The meeting starts at 10 AM. It is now 9 AM.</p></div><div class="example-item" data-example="refund"><strong>问题是否已经解决？</strong><p>Customer was charged twice. The agent refunded the extra charge.</p></div></div></div>
       </section>
 
       <section id="view-keys" class="view">
@@ -228,7 +307,7 @@
         <div class="view-head"><div><div class="eyebrow">Protocol</div><h1>MCP 接入</h1><p>使用标准 Streamable HTTP 连接 JEV，不需要额外 REST 适配层。</p></div><button class="btn btn-primary" data-go="keys">管理访问 Key</button></div>
         <div class="grid two">
           <div class="panel panel-pad"><div class="panel-title"><h2>连接参数</h2></div><div class="field"><label>MCP URL</label><div class="endpoint"><code id="guideEndpoint"></code><button class="icon-btn" data-copy="guideEndpoint" title="复制端点">⧉</button></div></div><div class="field"><label>认证方式</label><div class="endpoint"><code>Authorization: Bearer &lt;YOUR_KEY&gt;</code></div></div><div class="field"><label>工具名称</label><div class="endpoint"><code>jev_decide</code></div></div></div>
-          <div class="panel panel-pad"><div class="panel-title"><h2>接入步骤</h2></div><div class="guide-step"><div class="step-number">1</div><div><strong>生成个人 Key</strong><p>前往“访问 Key”创建凭证，并妥善保存完整值。</p></div></div><div class="guide-step"><div class="step-number">2</div><div><strong>配置 MCP 客户端</strong><p>将 URL 和 Bearer Key 写入客户端的 MCP Server 配置。</p></div></div><div class="guide-step"><div class="step-number">3</div><div><strong>调用 jev_decide</strong><p>传入 state 和 questions，模型会按输入顺序返回结构化 results。</p></div></div></div>
+          <div class="panel panel-pad"><div class="panel-title"><h2>接入步骤</h2></div><div class="guide-step"><div class="step-number">1</div><div><strong>生成个人 Key</strong><p>前往“访问 Key”创建凭证，并妥善保存完整值。</p></div></div><div class="guide-step"><div class="step-number">2</div><div><strong>配置 MCP 客户端</strong><p>将 URL 和 Bearer Key 写入客户端的 MCP Server 配置。</p></div></div><div class="guide-step"><div class="step-number">3</div><div><strong>调用 jev_decide</strong><p>传入 situation 和 questions，模型会按输入顺序返回结构化 results。</p></div></div></div>
         </div>
         <div class="panel panel-pad" style="margin-top:17px"><div class="panel-title"><div><h2>Python MCP Client 示例</h2><p style="margin-top:5px">适用于支持 MCP Python SDK 的 Agent 服务。</p></div><button class="icon-btn" data-copy="pythonExample" title="复制示例">⧉</button></div><pre id="pythonExample" class="code-block"></pre></div>
         <div class="panel panel-pad" style="margin-top:17px"><div class="panel-title"><h2>工具输入约定</h2></div><pre id="schemaExample" class="code-block"></pre></div>
@@ -239,13 +318,15 @@
 <div id="toast" class="toast hidden" style="position:fixed;right:24px;bottom:24px;padding:11px 14px;background:#153d3d;color:#fff"></div>
 
 <script>
-const state = { mode: 'login', user: null, keys: [], endpoint: `${window.location.origin}/mcp` };
+const state = { mode: 'login', user: null, keys: [], endpoint: `${window.location.origin}/mcp`, test: { inputType: 'text', file: null, objectUrl: null, supportedInputs: ['text'] } };
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 const dateText = (stamp) => stamp ? new Date(stamp * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '尚未使用';
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const headers = new Headers(options.headers || {});
+  if (!(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const response = await fetch(path, { credentials: 'same-origin', ...options, headers });
   let payload = {};
   try { payload = await response.json(); } catch (_) {}
   if (!response.ok) { const error = new Error(payload.detail || `请求失败（${response.status}）`); error.status = response.status; throw error; }
@@ -288,12 +369,19 @@ async function refreshDashboard() {
   try {
     const [status, keyData] = await Promise.all([api('/api/status'), api('/api/keys')]);
     state.keys = keyData.keys || [];
+    state.test.supportedInputs = status.supported_inputs || [];
     $('metricDevice').textContent = (status.device || 'CPU').toUpperCase();
     $('metricKeys').textContent = state.keys.length;
     $('metricModel').textContent = status.ready ? 'JEV' : '等待';
+    $('metricModelSub').textContent = status.model || status.model_id || '未配置';
+    $('modelName').textContent = status.model || 'JEV model';
+    $('modelId').textContent = status.model_id || '—';
     const badge = $('modelBadge'); badge.classList.toggle('warn', !status.ready); badge.innerHTML = status.ready ? '<span class="dot"></span> 已就绪' : '! 模型未就绪';
     $('topDot').classList.toggle('warn', !status.ready); $('topStatus').textContent = status.ready ? '服务运行中' : '模型加载异常';
     $('modelMessage').textContent = status.ready ? '模型以单实例方式加载，所有 MCP 请求共享同一个推理进程。' : (status.error || '模型正在加载，请稍后刷新。');
+    $('testCapability').textContent = `已实现：${state.test.supportedInputs.join(', ') || '无'}`;
+    $('testReadyBadge').className = `badge${status.ready ? '' : ' warn'}`;
+    $('testReadyBadge').innerHTML = status.ready ? `<span class="dot"></span> 已实现：${state.test.supportedInputs.join(', ') || '无'}` : '模型未就绪';
     renderKeys();
   } catch (error) { if (error.status === 401) showAuth(); }
 }
@@ -307,10 +395,93 @@ function renderKeys() {
   }));
 }
 
+const inputAccept = { image: 'image/*', audio: 'audio/*', video: 'video/*' };
+const inputLabels = { text: 'text', image: 'image', audio: 'audio', video: 'video' };
+
+function clearSelectedFile() {
+  if (state.test.objectUrl) URL.revokeObjectURL(state.test.objectUrl);
+  state.test.objectUrl = null; state.test.file = null; $('mediaFile').value = ''; $('filePreview').innerHTML = ''; $('filePreview').classList.add('hidden');
+}
+
+function renderFile(file) {
+  clearSelectedFile();
+  if (!file) return;
+  state.test.file = file; state.test.objectUrl = URL.createObjectURL(file);
+  const type = state.test.inputType;
+  const media = type === 'image' ? `<img src="${state.test.objectUrl}" alt="${escapeHtml(file.name)}">` : type === 'audio' ? `<audio src="${state.test.objectUrl}" controls></audio>` : `<video src="${state.test.objectUrl}" controls></video>`;
+  $('filePreview').innerHTML = `${media}<div class="file-meta"><strong title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</strong><span>${(file.size / 1024 / 1024).toFixed(2)} MB</span><button type="button" class="text-link" id="clearFile">移除</button></div>`;
+  $('filePreview').classList.remove('hidden');
+  $('clearFile').addEventListener('click', clearSelectedFile);
+}
+
+function setInputType(inputType) {
+  state.test.inputType = inputType;
+  document.querySelectorAll('[data-input-type]').forEach((button) => button.classList.toggle('active', button.dataset.inputType === inputType));
+  const mediaMode = inputType !== 'text';
+  $('uploadField').classList.toggle('hidden', !mediaMode);
+  $('mediaFile').accept = inputAccept[inputType] || '';
+  $('uploadLabel').textContent = `${inputLabels[inputType]} 文件`;
+  $('uploadHint').textContent = state.test.supportedInputs.includes(inputType) ? '当前适配器支持此输入类型' : '当前适配器尚未实现此输入类型，提交时会给出明确提示';
+  if (!mediaMode) clearSelectedFile();
+}
+
+function setOptionsVisibility() {
+  $('optionsField').classList.toggle('hidden', $('testQuestionType').value === 'yes_no');
+}
+
+function probabilityEntries(result) {
+  const items = Array.isArray(result) ? result : [result];
+  const first = items[0] || {};
+  const source = first.probabilities || first.probs || first.distribution;
+  if (Array.isArray(source)) {
+    const labels = first.options || first.labels || [];
+    return source.map((item, index) => ({ label: typeof item === 'number' ? (labels[index] || `选项 ${index + 1}`) : (item.label || item.option || item.name || labels[index] || `选项 ${index + 1}`), value: typeof item === 'number' ? item : item.probability ?? item.prob ?? item.value ?? item.score })).filter((item) => Number.isFinite(Number(item.value)));
+  }
+  if (source && typeof source === 'object') return Object.entries(source).map(([label, value]) => ({ label, value })).filter((item) => Number.isFinite(Number(item.value)));
+  return [];
+}
+
+function percent(value) {
+  const numeric = Number(value); if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(100, numeric <= 1 ? numeric * 100 : numeric));
+}
+
+function renderTestResult(payload) {
+  const results = payload.results || [];
+  const first = Array.isArray(results) ? (results[0] || {}) : results;
+  const entries = probabilityEntries(results);
+  const confidence = first.confidence ?? (entries.length ? Math.max(...entries.map((entry) => percent(entry.value))) / 100 : null);
+  const decision = first.decision ?? first.prediction ?? first.label ?? first.choice ?? first.value ?? '已返回';
+  $('resultEmpty').classList.add('hidden'); $('resultContent').classList.remove('hidden'); $('resultBadge').textContent = '推理完成'; $('resultBadge').classList.remove('warn');
+  $('resultSummary').innerHTML = `<div class="result-stat"><label>输入类型</label><strong>${escapeHtml(payload.input_type || 'text')}</strong></div><div class="result-stat"><label>Decision</label><strong title="${escapeHtml(decision)}">${escapeHtml(decision)}</strong></div><div class="result-stat"><label>Confidence</label><strong>${confidence === null ? '—' : `${percent(confidence).toFixed(1)}%`}</strong></div>`;
+  $('probabilityList').innerHTML = entries.length ? entries.map((entry) => `<div><div class="probability-head"><span>${escapeHtml(entry.label)}</span><span>${percent(entry.value).toFixed(1)}%</span></div><div class="probability-track"><div class="probability-fill" style="width:${percent(entry.value)}%"></div></div></div>`).join('') : '<div class="empty">当前返回中没有可绘制的 probability 字段，请查看原始 JSON。</div>';
+  $('resultNote').textContent = payload.filename ? `已接收文件：${payload.filename}` : '结果保留了模型原始字段，便于接入前调试。';
+  $('resultJson').textContent = JSON.stringify(payload, null, 2);
+}
+
+async function submitTest() {
+  const situation = $('testSituation').value.trim(); const question = $('testQuestion').value.trim(); const type = $('testQuestionType').value;
+  if (!situation || !question) { $('testMessage').textContent = '请先填写 Situation 和 Question。'; return; }
+  if (state.test.inputType !== 'text' && !state.test.file) { $('testMessage').textContent = '当前输入类型需要先选择一个媒体文件。'; return; }
+  const form = new FormData(); form.append('input_type', state.test.inputType); form.append('situation', situation); form.append('question', question); form.append('question_type', type); form.append('options', $('testOptions').value); if (state.test.file) form.append('media', state.test.file);
+  const button = $('testSubmit'); button.disabled = true; button.textContent = '推理中…'; $('testMessage').textContent = '';
+  try { renderTestResult(await api('/api/test/decide', { method: 'POST', body: form })); }
+  catch (error) { $('testMessage').textContent = error.message; $('resultBadge').textContent = '请求失败'; $('resultBadge').classList.add('warn'); }
+  finally { button.disabled = false; button.textContent = 'Decide'; }
+}
+
+function fillExample(name) {
+  setInputType('text');
+  $('testQuestionType').value = 'yes_no'; setOptionsVisibility();
+  if (name === 'meeting') { $('testSituation').value = 'The meeting starts at 10 AM. It is now 9 AM.'; $('testQuestion').value = 'Has the meeting started?'; }
+  else { $('testSituation').value = 'Customer was charged twice. The agent refunded the extra charge.'; $('testQuestion').value = 'Was the issue actually resolved?'; }
+  openView('test');
+}
+
 function openView(view) {
   document.querySelectorAll('.view').forEach((item) => item.classList.toggle('active', item.id === `view-${view}`));
   document.querySelectorAll('.nav-btn').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
-  $('crumbName').textContent = ({ overview: '总览', keys: '访问 Key', guide: 'MCP 接入' })[view];
+  $('crumbName').textContent = ({ overview: '总览', test: '模型测试', keys: '访问 Key', guide: 'MCP 接入' })[view];
   if (view === 'keys') refreshDashboard();
 }
 
@@ -337,6 +508,16 @@ $('keyForm').addEventListener('submit', async (event) => {
     $('newKeyValue').textContent = result.key; $('revealBox').classList.remove('hidden'); $('keyName').value = ''; showToast('Key 已创建'); await refreshDashboard();
   } catch (error) { showToast(error.message); }
 });
+document.querySelectorAll('[data-input-type]').forEach((button) => button.addEventListener('click', () => setInputType(button.dataset.inputType)));
+$('uploadDrop').addEventListener('click', (event) => { if (event.target.id !== 'mediaFile') $('mediaFile').click(); });
+$('uploadDrop').addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('mediaFile').click(); } });
+$('uploadDrop').addEventListener('dragover', (event) => { event.preventDefault(); $('uploadDrop').classList.add('dragging'); });
+$('uploadDrop').addEventListener('dragleave', () => $('uploadDrop').classList.remove('dragging'));
+$('uploadDrop').addEventListener('drop', (event) => { event.preventDefault(); $('uploadDrop').classList.remove('dragging'); renderFile(event.dataTransfer.files[0]); });
+$('mediaFile').addEventListener('change', (event) => renderFile(event.target.files[0]));
+$('testQuestionType').addEventListener('change', setOptionsVisibility);
+$('testSubmit').addEventListener('click', submitTest);
+document.querySelectorAll('[data-example]').forEach((item) => item.addEventListener('click', () => fillExample(item.dataset.example)));
 $('refreshKeys').addEventListener('click', refreshDashboard);
 $('logoutBtn').addEventListener('click', async () => { await api('/api/auth/logout', { method: 'POST' }); showAuth(); });
 
@@ -344,6 +525,7 @@ $('logoutBtn').addEventListener('click', async () => { await api('/api/auth/logo
   try { const result = await api('/api/auth/me'); showApp(result.user); }
   catch (_) { showAuth(); }
 })();
+setOptionsVisibility();
 </script>
 </body>
 </html>

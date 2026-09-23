@@ -23,13 +23,14 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 from pydantic import AnyHttpUrl, BaseModel, Field, model_validator
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
 
 from config import settings
@@ -37,6 +38,16 @@ from model_runtime import ModelRuntime
 
 SESSION_COOKIE = "jev_session"
 runtime = ModelRuntime(settings)
+MEDIA_MIME_PREFIXES = {
+    "image": "image/",
+    "audio": "audio/",
+    "video": "video/",
+}
+MEDIA_EXTENSIONS = {
+    "image": {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff"},
+    "audio": {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".webm"},
+    "video": {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"},
+}
 
 
 def now() -> int:
@@ -267,7 +278,39 @@ def require_user(jev_session: str | None = Cookie(default=None)) -> sqlite3.Row:
 
 
 def model_status() -> dict[str, Any]:
-    return {"model": settings.model_name, "model_id": settings.model_id, **runtime.status()}
+    return {
+        "model": settings.model_name,
+        "model_id": settings.model_id,
+        "max_upload_mb": settings.max_upload_mb,
+        **runtime.status(),
+    }
+
+
+def parse_options(value: str) -> list[str]:
+    return [item.strip() for item in value.splitlines() if item.strip()]
+
+
+async def validate_upload(upload: UploadFile | None, input_type: str) -> tuple[bytes, str]:
+    if upload is None or not upload.filename:
+        raise HTTPException(status_code=400, detail=f"{input_type} 输入需要上传一个文件")
+
+    content_type = (upload.content_type or "").lower()
+    suffix = Path(upload.filename).suffix.lower()
+    expected_prefix = MEDIA_MIME_PREFIXES[input_type]
+    if not content_type.startswith(expected_prefix) and suffix not in MEDIA_EXTENSIONS[input_type]:
+        raise HTTPException(
+            status_code=415,
+            detail=f"文件类型与 {input_type} 不匹配，请上传 {expected_prefix[:-1]} 文件",
+        )
+
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    content = await upload.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"文件超过 {settings.max_upload_mb} MB 上传限制",
+        )
+    return content, content_type or "application/octet-stream"
 
 
 @asynccontextmanager
@@ -290,24 +333,26 @@ async def lifespan(_: FastAPI):
     runtime.model = None
 
 
-def build_mcp_server() -> MCPServer:
+def build_mcp_server() -> FastMCP:
     auth = AuthSettings(
         issuer_url=AnyHttpUrl(settings.public_base_url),
         resource_server_url=AnyHttpUrl(settings.mcp_resource_url),
         required_scopes=["jev:decide"],
         validate_token_resource=False,
     )
-    server = MCPServer(
+    server = FastMCP(
         name="jev-model-gateway",
-        title="JEV Model Gateway",
-        description=f"Structured decisions from the {settings.model_name} model.",
         instructions=(
-            "Use jev_decide for structured classification, ordered scoring, and yes/no "
-            "judgments. The model returns probabilities instead of generated text."
+            f"Structured decisions from the {settings.model_name} model. Use jev_decide "
+            "for structured classification, ordered scoring, and yes/no judgments. "
+            "The model returns probabilities instead of generated text."
         ),
-        version="1.0.0",
         token_verifier=MCPKeyVerifier(),
         auth=auth,
+        host=settings.host,
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        json_response=True,
     )
 
     @server.tool()
@@ -332,12 +377,7 @@ def build_mcp_server() -> MCPServer:
 
 
 mcp_server = build_mcp_server()
-mcp_http_app = mcp_server.streamable_http_app(
-    streamable_http_path="/mcp",
-    stateless_http=True,
-    json_response=True,
-    host=settings.host,
-)
+mcp_http_app = mcp_server.streamable_http_app()
 
 app = FastAPI(title="JEV Model Gateway", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.add_middleware(
@@ -418,6 +458,70 @@ def status(user: sqlite3.Row = Depends(require_user)) -> dict[str, Any]:
             (user["id"],),
         ).fetchone()["count"]
     return {**model_status(), "mcp_endpoint": settings.mcp_resource_url, "active_key_count": count}
+
+
+@app.post("/api/test/decide")
+async def test_decide(
+    input_type: Literal["text", "image", "audio", "video"] = Form("text"),
+    situation: str = Form(..., min_length=1, max_length=16_000),
+    question: str = Form(..., min_length=1, max_length=4_000),
+    options: str = Form(""),
+    question_type: Literal["choice", "score", "yes_no"] = Form("choice"),
+    media: UploadFile | None = File(default=None),
+    user: sqlite3.Row = Depends(require_user),
+) -> dict[str, Any]:
+    """Run a browser-only test request; external model access remains MCP-only."""
+    del user
+    current_status = runtime.status()
+    if not current_status.get("ready"):
+        raise HTTPException(
+            status_code=503,
+            detail=current_status.get("error") or "模型尚未就绪，请稍后重试",
+        )
+    if not runtime.supports_input_type(input_type):
+        supported = ", ".join(current_status.get("supported_inputs") or []) or "无"
+        raise HTTPException(
+            status_code=422,
+            detail=f"当前模型暂不支持 {input_type} 输入，已实现能力：{supported}",
+        )
+
+    media_bytes: bytes | None = None
+    content_type: str | None = None
+    filename: str | None = None
+    if input_type != "text":
+        media_bytes, content_type = await validate_upload(media, input_type)
+        filename = media.filename if media else None
+
+    option_values = parse_options(options)
+    try:
+        decision = DecisionQuestion(
+            type=question_type,
+            question=question.strip(),
+            options=None if question_type == "yes_no" else option_values,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        results = await run_in_threadpool(
+            runtime.test_decide,
+            input_type,
+            situation.strip(),
+            [decision.to_model_question()],
+            media_bytes,
+            filename,
+            content_type,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"JEV 推理失败：{exc}") from exc
+    return {
+        "model": settings.model_name,
+        "model_kind": settings.model_kind,
+        "input_type": input_type,
+        "filename": filename,
+        "content_type": content_type,
+        "results": results,
+    }
 
 
 @app.get("/api/keys")

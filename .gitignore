@@ -12,3 +12,4 @@ jev_gateway.db-shm
 jev_gateway.db-wal
 __pycache__
 .cache/
+xxx.log

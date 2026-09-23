@@ -71,6 +71,12 @@ def _origins(value: str | None, fallback: str) -> list[str]:
     return [item.strip().rstrip("/") for item in value.split(",") if item.strip()]
 
 
+def _csv(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
+    if not value:
+        return default
+    return tuple(item.strip().lower() for item in value.split(",") if item.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     base_dir: Path
@@ -78,6 +84,8 @@ class Settings:
     database_path: Path
     model_id: str
     model_name: str
+    model_kind: str
+    model_inputs: tuple[str, ...]
     model_revision: str | None
     host: str
     port: int
@@ -94,6 +102,7 @@ class Settings:
     model_cache_dir: Path | None
     offload_dir: Path
     max_concurrent_inference: int
+    max_upload_mb: int
     skip_model_load: bool
     trust_remote_code: bool
     log_level: str
@@ -107,6 +116,16 @@ def load_settings() -> Settings:
     port = _int("OPEN_JEV_PORT", 8019)
     public_base_url = _env("OPEN_JEV_PUBLIC_URL", f"http://127.0.0.1:{port}").rstrip("/")
     model_cache = _env("OPEN_JEV_MODEL_CACHE")
+    model_inputs = _csv(_env("OPEN_JEV_MODEL_INPUTS"), ("text",))
+    invalid_inputs = set(model_inputs) - {"text", "image", "audio", "video"}
+    if invalid_inputs:
+        raise ValueError(
+            "OPEN_JEV_MODEL_INPUTS contains unsupported values: "
+            + ", ".join(sorted(invalid_inputs))
+        )
+    model_kind = _env("OPEN_JEV_MODEL_KIND", "typed_decisions").lower()
+    if not model_kind:
+        raise ValueError("OPEN_JEV_MODEL_KIND must not be empty")
     return Settings(
         base_dir=BASE_DIR,
         index_html=BASE_DIR / "index.html",
@@ -121,6 +140,8 @@ def load_settings() -> Settings:
             "open-jev-deberta-v3-large",
             "MODEL_NAME",
         ),
+        model_kind=model_kind,
+        model_inputs=model_inputs,
         model_revision=_env("OPEN_JEV_MODEL_REVISION"),
         host=_env("OPEN_JEV_HOST", "0.0.0.0"),
         port=port,
@@ -137,6 +158,7 @@ def load_settings() -> Settings:
         model_cache_dir=_path(model_cache, BASE_DIR / ".cache" / "huggingface") if model_cache else None,
         offload_dir=_path(_env("OPEN_JEV_OFFLOAD_DIR"), BASE_DIR / "model_offload"),
         max_concurrent_inference=max(1, _int("OPEN_JEV_MAX_CONCURRENT_INFERENCE", 1)),
+        max_upload_mb=max(1, _int("OPEN_JEV_MAX_UPLOAD_MB", 50)),
         skip_model_load=_bool("OPEN_JEV_SKIP_MODEL_LOAD", False),
         trust_remote_code=_bool("OPEN_JEV_TRUST_REMOTE_CODE", False),
         log_level=_env("OPEN_JEV_LOG_LEVEL", "info").lower(),
