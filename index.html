@@ -43,6 +43,7 @@
   .auth-tab.active { color: var(--teal-dark); border-color: var(--teal); }
   .field { margin: 14px 0; }
   .field label { display: block; margin-bottom: 7px; color: #49565e; font-size: 12px; font-weight: 800; letter-spacing: .02em; }
+  .field-hint { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
   .field input, .field textarea, .field select { width: 100%; border: 1px solid var(--line); background: #fbfcfb; color: var(--ink); outline: none; }
   .field input { height: 44px; padding: 0 13px; }
   .field textarea { min-height: 118px; padding: 12px 13px; resize: vertical; line-height: 1.55; }
@@ -284,7 +285,7 @@
             <div id="uploadField" class="field upload-field hidden"><label id="uploadLabel" for="mediaFile">媒体文件</label><div id="uploadDrop" class="upload-drop" tabindex="0"><input id="mediaFile" type="file"><div><span class="upload-icon">↥</span><strong>将文件拖到这里，或点击选择</strong><span id="uploadHint">支持模型声明的媒体格式</span></div></div><div id="filePreview" class="file-preview hidden"></div></div>
             <div class="field"><label for="testSituation">Situation</label><textarea id="testSituation" maxlength="16000" placeholder="模型需要知道的背景信息。例如：客户的订单到货时损坏，要求退款。"></textarea></div>
             <div class="grid test-question-grid"><div class="field"><label for="testQuestion">Question</label><input id="testQuestion" maxlength="4000" placeholder="应该采取哪种处理方式？"></div><div class="field"><label for="testQuestionType">类型</label><select id="testQuestionType"><option value="choice">Choice</option><option value="score">Score</option><option value="yes_no">Yes / No</option></select></div></div>
-            <div id="optionsField" class="field"><label for="testOptions">Options，每行一个</label><textarea id="testOptions" placeholder="退款\n补充信息\n升级处理"></textarea></div>
+            <div id="optionsField" class="field"><label id="optionsLabel" for="testOptions">Options，每行一个</label><textarea id="testOptions" placeholder="退款\n补充信息\n升级处理"></textarea><div id="optionsHint" class="field-hint">Choice 至少填写 2 个不同选项。</div></div>
             <button id="testSubmit" class="btn btn-primary test-submit" type="button">Decide</button>
             <div id="testMessage" class="test-message"></div>
           </div>
@@ -426,7 +427,10 @@ function setInputType(inputType) {
 }
 
 function setOptionsVisibility() {
-  $('optionsField').classList.toggle('hidden', $('testQuestionType').value === 'yes_no');
+  const type = $('testQuestionType').value;
+  $('optionsField').classList.toggle('hidden', type === 'yes_no');
+  $('optionsLabel').textContent = type === 'score' ? 'Options，按低到高排序，每行一个' : 'Options，每行一个';
+  $('optionsHint').textContent = type === 'score' ? 'Score 需要 2–10 个不同选项，并按从低到高排列。' : 'Choice 至少填写 2 个不同选项。';
 }
 
 function probabilityEntries(result) {
@@ -462,6 +466,10 @@ function renderTestResult(payload) {
 async function submitTest() {
   const situation = $('testSituation').value.trim(); const question = $('testQuestion').value.trim(); const type = $('testQuestionType').value;
   if (!situation || !question) { $('testMessage').textContent = '请先填写 Situation 和 Question。'; return; }
+  const optionValues = $('testOptions').value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  if (type === 'choice' && (optionValues.length < 2 || optionValues.length > 255)) { $('testMessage').textContent = 'Choice 至少需要 2 个选项，每行填写一个。'; $('testOptions').focus(); return; }
+  if (type === 'score' && (optionValues.length < 2 || optionValues.length > 10)) { $('testMessage').textContent = 'Score 需要 2 到 10 个选项，并按从低到高排列。'; $('testOptions').focus(); return; }
+  if (type !== 'yes_no' && new Set(optionValues).size !== optionValues.length) { $('testMessage').textContent = '选项不能重复，请检查每一行。'; $('testOptions').focus(); return; }
   if (state.test.inputType !== 'text' && !state.test.file) { $('testMessage').textContent = '当前输入类型需要先选择一个媒体文件。'; return; }
   const form = new FormData(); form.append('input_type', state.test.inputType); form.append('situation', situation); form.append('question', question); form.append('question_type', type); form.append('options', $('testOptions').value); if (state.test.file) form.append('media', state.test.file);
   const button = $('testSubmit'); button.disabled = true; button.textContent = '推理中…'; $('testMessage').textContent = '';

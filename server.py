@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import secrets
 import sqlite3
 import time
@@ -29,7 +30,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
-from pydantic import AnyHttpUrl, BaseModel, Field, model_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, ValidationError, model_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
 
@@ -37,6 +38,7 @@ from config import settings
 from model_runtime import ModelRuntime
 
 SESSION_COOKIE = "jev_session"
+logger = logging.getLogger("jev.gateway")
 runtime = ModelRuntime(settings)
 MEDIA_MIME_PREFIXES = {
     "image": "image/",
@@ -391,7 +393,10 @@ app.add_middleware(
 
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
-    return settings.index_html.read_text(encoding="utf-8")
+    return HTMLResponse(
+        settings.index_html.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
 
 
 @app.get("/health")
@@ -472,6 +477,10 @@ async def test_decide(
 ) -> dict[str, Any]:
     """Run a browser-only test request; external model access remains MCP-only."""
     del user
+    if not situation.strip():
+        raise HTTPException(status_code=422, detail="Situation 不能为空。")
+    if not question.strip():
+        raise HTTPException(status_code=422, detail="Question 不能为空。")
     current_status = runtime.status()
     if not current_status.get("ready"):
         raise HTTPException(
@@ -499,8 +508,17 @@ async def test_decide(
             question=question.strip(),
             options=None if question_type == "yes_no" else option_values,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValidationError as exc:
+        message = exc.errors(include_url=False)[0]["msg"]
+        if "unique" in message:
+            detail = "选项不能重复，请检查每一行。"
+        elif question_type == "score":
+            detail = "Score 需要 2 到 10 个选项，并按从低到高排列。"
+        elif question_type == "choice":
+            detail = "Choice 至少需要 2 个选项，每行填写一个。"
+        else:
+            detail = message.removeprefix("Value error, ")
+        raise HTTPException(status_code=422, detail=detail) from exc
 
     try:
         results = await run_in_threadpool(
@@ -513,7 +531,21 @@ async def test_decide(
             content_type,
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"JEV 推理失败：{exc}") from exc
+        error_id = secrets.token_hex(4)
+        logger.exception("JEV inference failed (request_id=%s)", error_id)
+        error_text = str(exc).lower()
+        if "out of memory" in error_text or "cuda error: memory" in error_text:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"模型显存不足（请求 {error_id}）。请降低并发或上下文长度、"
+                    "释放其他 GPU 占用，或调整模型量化/设备放置配置。"
+                ),
+            ) from exc
+        raise HTTPException(
+            status_code=500,
+            detail=f"模型推理失败（请求 {error_id}，{type(exc).__name__}）。请查看服务端日志。",
+        ) from exc
     return {
         "model": settings.model_name,
         "model_kind": settings.model_kind,

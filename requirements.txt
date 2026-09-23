@@ -6,6 +6,7 @@ python-dotenv>=1.0,<2
 python-multipart>=0.0.9,<1
 
 # JEV model runtime
+typed-decisions==0.0.1
 torch>=2.4,<2.6
 transformers>=4.57,<5
 accelerate>=1.15,<2
