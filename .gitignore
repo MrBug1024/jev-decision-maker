@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+.env.*
+!.env.example
+.cache/
+model_offload/
+jev_gateway.db
+jev_gateway.db-shm
+jev_gateway.db-wal
+__pycache__
+.cache/

@@ -1,0 +1,18 @@
+[Unit]
+Description=JEV Model Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=jev
+Group=jev
+WorkingDirectory=/opt/jev-gateway
+EnvironmentFile=/opt/jev-gateway/.env
+ExecStart=/opt/jev-gateway/.venv/bin/python /opt/jev-gateway/server.py
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=infinity
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

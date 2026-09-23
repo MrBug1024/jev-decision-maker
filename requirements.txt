@@ -1,0 +1,16 @@
+# Web service and MCP transport
+fastapi>=0.141,<1
+uvicorn[standard]>=0.53,<1
+mcp>=2.2,<3
+python-dotenv>=1.0,<2
+
+# JEV model runtime
+typed-decisions==0.0.1
+torch>=2.4,<2.6
+transformers>=4.57,<5
+accelerate>=1.15,<2
+safetensors>=0.4,<1
+huggingface-hub>=0.25,<1
+
+# Keep numerical dependencies on a stable major version.
+numpy>=1.26,<3

@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JEV Model Gateway</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #17212b;
+    --muted: #687480;
+    --line: #dfe5e4;
+    --paper: #f5f7f5;
+    --panel: #ffffff;
+    --teal: #087f78;
+    --teal-dark: #075d59;
+    --teal-soft: #e3f3f0;
+    --coral: #d5694f;
+    --coral-soft: #fff0eb;
+    --yellow-soft: #fff7dc;
+    --shadow: 0 16px 40px rgba(31, 54, 53, .08);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--paper); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+  .hidden { display: none !important; }
+  .auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 28px; background: #edf3f0; }
+  .auth-shell { width: min(980px, 100%); display: grid; grid-template-columns: 1.02fr .98fr; min-height: 590px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+  .auth-intro { display: flex; flex-direction: column; justify-content: space-between; padding: 48px; background: #153d3d; color: #f3fbf7; }
+  .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: .02em; }
+  .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; background: var(--coral); color: #fff; font-size: 17px; font-weight: 900; }
+  .auth-intro h1 { max-width: 390px; margin: 72px 0 16px; font-size: clamp(31px, 4vw, 50px); line-height: 1.06; letter-spacing: -.04em; }
+  .auth-intro p { max-width: 380px; color: #b9d4ce; line-height: 1.7; }
+  .intro-points { display: grid; gap: 12px; color: #d9ece7; font-size: 13px; }
+  .intro-points span { display: flex; align-items: center; gap: 10px; }
+  .intro-points i { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid #6aa39b; color: #b9f0e3; font-style: normal; font-size: 11px; }
+  .auth-panel { padding: 48px; display: flex; flex-direction: column; justify-content: center; }
+  .auth-panel h2 { margin: 0 0 8px; font-size: 26px; letter-spacing: -.03em; }
+  .auth-panel .lead { margin: 0 0 28px; color: var(--muted); font-size: 14px; }
+  .auth-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  .auth-tab { padding: 0 0 11px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 700; }
+  .auth-tab.active { color: var(--teal-dark); border-color: var(--teal); }
+  .field { margin: 14px 0; }
+  .field label { display: block; margin-bottom: 7px; color: #49565e; font-size: 12px; font-weight: 800; letter-spacing: .02em; }
+  .field input { width: 100%; height: 44px; padding: 0 13px; border: 1px solid var(--line); background: #fbfcfb; color: var(--ink); outline: none; }
+  .field input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(8,127,120,.12); }
+  .btn { min-height: 42px; border: 1px solid transparent; padding: 0 16px; font-weight: 800; font-size: 13px; transition: transform .15s ease, background .15s ease; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--teal); color: #fff; }
+  .btn-primary:hover { background: var(--teal-dark); }
+  .btn-quiet { background: #f1f4f3; border-color: var(--line); color: var(--ink); }
+  .btn-danger { background: var(--coral-soft); color: #a54431; border-color: #f2c8bd; }
+  .auth-submit { width: 100%; margin-top: 10px; }
+  .form-message, .toast { min-height: 20px; margin-top: 14px; color: var(--coral); font-size: 13px; }
+
+  .app-shell { display: flex; min-height: 100vh; }
+  .sidebar { width: 256px; flex: 0 0 256px; display: flex; flex-direction: column; padding: 27px 18px 18px; background: #153d3d; color: #dceee9; }
+  .sidebar .brand { padding: 0 13px; }
+  .sidebar .brand small { display: block; margin-top: 3px; color: #8fbdb4; font-size: 10px; font-weight: 600; letter-spacing: .1em; }
+  .nav-label { margin: 53px 13px 10px; color: #79a9a0; font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+  .nav-btn { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 13px; margin-bottom: 4px; border: 0; background: transparent; color: #b5d3cd; text-align: left; font-size: 13px; font-weight: 700; }
+  .nav-btn span { width: 20px; color: #7ab8ac; font-size: 15px; text-align: center; }
+  .nav-btn.active, .nav-btn:hover { background: #205550; color: #fff; }
+  .nav-btn.active span { color: #ffaf98; }
+  .sidebar-foot { margin-top: auto; padding: 14px 13px 0; border-top: 1px solid rgba(205,237,227,.13); }
+  .user-row { display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 31px; height: 31px; display: grid; place-items: center; background: var(--coral); color: #fff; font-size: 12px; font-weight: 900; }
+  .user-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: 12px; font-weight: 800; }
+  .user-meta { margin-top: 3px; color: #83aaa3; font-size: 10px; }
+  .logout { width: 100%; margin-top: 15px; padding: 8px 0; border: 1px solid rgba(205,237,227,.18); background: transparent; color: #aed0c8; font-size: 11px; }
+  .main { min-width: 0; flex: 1; }
+  .topbar { height: 76px; display: flex; align-items: center; justify-content: space-between; padding: 0 42px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.76); }
+  .crumb { color: var(--muted); font-size: 12px; }
+  .crumb strong { color: var(--ink); }
+  .top-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; background: #25a77f; border-radius: 50%; box-shadow: 0 0 0 4px #dff4ec; }
+  .dot.warn { background: var(--coral); box-shadow: 0 0 0 4px var(--coral-soft); }
+  .content { width: min(1180px, 100%); margin: 0 auto; padding: 38px 42px 54px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .view-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 27px; }
+  .view-head h1 { margin: 0 0 8px; font-size: 29px; line-height: 1.1; letter-spacing: -.04em; }
+  .view-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .eyebrow { margin-bottom: 9px; color: var(--teal); font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+  .grid { display: grid; gap: 17px; }
+  .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .panel { border: 1px solid var(--line); background: var(--panel); }
+  .panel-pad { padding: 22px; }
+  .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
+  .panel-title h2 { margin: 0; font-size: 15px; letter-spacing: -.015em; }
+  .panel-title p { margin: 0; color: var(--muted); font-size: 11px; }
+  .metric { min-height: 132px; padding: 20px; }
+  .metric-label { color: var(--muted); font-size: 11px; font-weight: 800; }
+  .metric-value { margin-top: 14px; font-size: 26px; font-weight: 850; letter-spacing: -.04em; }
+  .metric-sub { margin-top: 7px; color: var(--muted); font-size: 11px; }
+  .model-card { display: flex; align-items: center; gap: 15px; }
+  .model-icon { width: 46px; height: 46px; display: grid; place-items: center; background: var(--teal-soft); color: var(--teal-dark); font-size: 22px; font-weight: 900; }
+  .model-name { font-size: 14px; font-weight: 850; }
+  .model-id { margin-top: 5px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--teal-soft); color: var(--teal-dark); font-size: 10px; font-weight: 900; }
+  .badge.warn { background: var(--yellow-soft); color: #8c6517; }
+  .endpoint { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 12px; background: #f3f6f5; border: 1px solid var(--line); }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .endpoint code { min-width: 0; flex: 1; overflow: hidden; color: var(--teal-dark); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .icon-btn { width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 14px; }
+  .icon-btn:hover { color: var(--teal-dark); border-color: var(--teal); }
+  .code-block { position: relative; margin: 0; padding: 17px; overflow: auto; background: #183737; color: #d8eeea; font-size: 11px; line-height: 1.65; }
+  .code-copy { position: absolute; top: 10px; right: 10px; color: #b9d9d1; border-color: #47706b; background: #214746; }
+  .helper { margin-top: 12px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .empty { padding: 28px 14px; color: var(--muted); text-align: center; font-size: 12px; }
+  .key-list { display: grid; gap: 0; }
+  .key-row { display: grid; grid-template-columns: minmax(150px, 1.5fr) minmax(160px, 1.4fr) 120px 70px; align-items: center; gap: 15px; min-height: 70px; border-top: 1px solid var(--line); }
+  .key-row:first-child { border-top: 0; }
+  .key-name { font-size: 13px; font-weight: 800; }
+  .key-prefix { color: var(--teal-dark); font-size: 11px; }
+  .key-date { color: var(--muted); font-size: 11px; }
+  .key-action { justify-self: end; }
+  .new-key { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 13px; padding: 17px; background: #edf6f3; border: 1px solid #cce5df; }
+  .new-key .field { margin: 0; }
+  .reveal { margin-top: 17px; padding: 16px; background: var(--yellow-soft); border: 1px solid #efdca1; }
+  .reveal strong { display: block; color: #735719; font-size: 12px; }
+  .reveal-line { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .reveal code { flex: 1; min-width: 0; overflow: auto; padding: 9px; background: #fffdf3; color: #674f16; font-size: 11px; white-space: nowrap; }
+  .guide-step { display: flex; gap: 13px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .guide-step:first-child { padding-top: 0; border-top: 0; }
+  .step-number { width: 24px; height: 24px; flex: 0 0 24px; display: grid; place-items: center; background: var(--coral-soft); color: var(--coral); font-size: 11px; font-weight: 900; }
+  .guide-step strong { display: block; margin-bottom: 4px; font-size: 12px; }
+  .guide-step p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  @media (max-width: 860px) {
+    .auth-shell { grid-template-columns: 1fr; }
+    .auth-intro { display: none; }
+    .sidebar { width: 70px; flex-basis: 70px; padding: 22px 10px; }
+    .sidebar .brand { padding: 0; justify-content: center; }
+    .sidebar .brand-text, .nav-label, .nav-btn em, .sidebar-foot .user-name, .sidebar-foot .user-meta, .logout { display: none; }
+    .nav-btn { justify-content: center; padding: 12px 0; }
+    .nav-btn span { margin: 0; }
+    .sidebar-foot { padding: 14px 0 0; }
+    .user-row { justify-content: center; }
+    .topbar { padding: 0 22px; }
+    .content { padding: 30px 22px 44px; }
+  }
+  @media (max-width: 620px) {
+    .auth-screen, .auth-panel { padding: 20px; }
+    .top-status { display: none; }
+    .view-head { display: block; }
+    .view-head .btn { margin-top: 17px; }
+    .grid.two, .grid.three { grid-template-columns: 1fr; }
+    .key-row { grid-template-columns: 1fr auto; gap: 7px; padding: 14px 0; }
+    .key-prefix, .key-date { grid-column: 1; }
+    .key-action { grid-column: 2; grid-row: 1 / span 3; }
+    .new-key { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<section id="authScreen" class="auth-screen">
+  <div class="auth-shell">
+    <div class="auth-intro">
+      <div>
+        <div class="brand"><span class="brand-mark">J</span><span>JEV <small>MODEL GATEWAY</small></span></div>
+        <h1>让结构化判断，直接进入你的工作流。</h1>
+        <p>一个轻量的 JEV 模型服务台。账户管理、访问凭证与 MCP 接入统一在这里完成。</p>
+      </div>
+      <div class="intro-points">
+        <span><i>01</i> 只保留标准 MCP Streamable HTTP</span>
+        <span><i>02</i> 每个账户独立管理自己的 Key</span>
+        <span><i>03</i> SQLite 持久化，不暴露明文凭证</span>
+      </div>
+    </div>
+    <div class="auth-panel">
+      <h2 id="authTitle">欢迎回来</h2>
+      <p id="authLead" class="lead">登录后管理你的 MCP 接入凭证。</p>
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-auth-mode="login">登录</button>
+        <button class="auth-tab" data-auth-mode="register">创建账户</button>
+      </div>
+      <form id="authForm">
+        <div class="field"><label for="username">用户名</label><input id="username" autocomplete="username" placeholder="例如：jev-team" required></div>
+        <div class="field"><label for="password">密码</label><input id="password" type="password" autocomplete="current-password" placeholder="至少 6 个字符" required></div>
+        <button id="authSubmit" class="btn btn-primary auth-submit" type="submit">登录到控制台</button>
+      </form>
+      <div id="authMessage" class="form-message"></div>
+    </div>
+  </div>
+</section>
+
+<div id="appShell" class="app-shell hidden">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">J</span><span class="brand-text">JEV<small>MODEL GATEWAY</small></span></div>
+    <div class="nav-label">Workspace</div>
+    <button class="nav-btn active" data-view="overview"><span>⌂</span><em>总览</em></button>
+    <button class="nav-btn" data-view="keys"><span>⌁</span><em>访问 Key</em></button>
+    <button class="nav-btn" data-view="guide"><span>↗</span><em>MCP 接入</em></button>
+    <div class="sidebar-foot">
+      <div class="user-row"><div id="avatar" class="avatar">J</div><div><div id="userName" class="user-name"></div><div class="user-meta">个人工作区</div></div></div>
+      <button id="logoutBtn" class="logout">退出账户</button>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div class="crumb">JEV Gateway <span>/</span> <strong id="crumbName">总览</strong></div><div class="top-status"><span id="topDot" class="dot"></span><span id="topStatus">服务运行中</span></div></header>
+    <div class="content">
+      <section id="view-overview" class="view active">
+        <div class="view-head"><div><div class="eyebrow">Command center</div><h1>模型服务总览</h1><p>把一次结构化判断，作为标准 MCP 工具接入任何兼容的 Agent。</p></div><button class="btn btn-primary" data-go="keys">+ 创建访问 Key</button></div>
+        <div class="grid three">
+          <div class="panel metric"><div class="metric-label">当前模型</div><div id="metricModel" class="metric-value">JEV</div><div id="metricModelSub" class="metric-sub">open-jev-deberta-v3-large</div></div>
+          <div class="panel metric"><div class="metric-label">运行设备</div><div id="metricDevice" class="metric-value">—</div><div class="metric-sub">模型加载状态</div></div>
+          <div class="panel metric"><div class="metric-label">活跃 Key</div><div id="metricKeys" class="metric-value">0</div><div class="metric-sub">仅属于当前账户</div></div>
+        </div>
+        <div class="grid two" style="margin-top:17px">
+          <div class="panel panel-pad"><div class="panel-title"><h2>模型状态</h2><span id="modelBadge" class="badge"><span class="dot"></span> 已就绪</span></div><div class="model-card"><div class="model-icon">◎</div><div><div class="model-name">open-jev-deberta-v3-large</div><div class="model-id">com-kotobalabs/open-jev-deberta-v3-large</div></div></div><p id="modelMessage" class="helper">模型以单实例方式加载，所有 MCP 请求共享同一个推理进程。</p></div>
+          <div class="panel panel-pad"><div class="panel-title"><h2>MCP 服务端点</h2><button class="icon-btn" data-copy="mcpEndpoint" title="复制端点">⧉</button></div><div class="endpoint"><code id="mcpEndpoint"></code></div><p class="helper">将此地址与下方生成的 Key 一起配置到 MCP 客户端。</p></div>
+        </div>
+        <div class="grid two" style="margin-top:17px">
+          <div class="panel panel-pad"><div class="panel-title"><h2>快速接入</h2><button class="icon-btn" data-go="guide" title="查看完整接入说明">↗</button></div><pre id="quickCode" class="code-block"><code id="quickCodeText"></code><button class="icon-btn code-copy" data-copy="quickCodeText" title="复制命令">⧉</button></pre></div>
+          <div class="panel panel-pad"><div class="panel-title"><h2>能力范围</h2></div><div class="guide-step"><div class="step-number">A</div><div><strong>Choice 分类</strong><p>从多个标签中选择最合适的结果，并返回概率分布。</p></div></div><div class="guide-step"><div class="step-number">B</div><div><strong>Score 评分</strong><p>基于有序选项给出连续分数与置信度。</p></div></div><div class="guide-step"><div class="step-number">C</div><div><strong>Noul 判断</strong><p>对一个是非陈述返回为真的概率。</p></div></div></div>
+        </div>
+      </section>
+
+      <section id="view-keys" class="view">
+        <div class="view-head"><div><div class="eyebrow">Credentials</div><h1>访问 Key</h1><p>Key 只在创建完成时展示一次。服务端仅保存不可逆摘要。</p></div></div>
+        <div class="panel panel-pad"><div class="panel-title"><div><h2>生成新的 MCP Key</h2><p style="margin-top:5px">建议按项目或 Agent 命名，方便后续吊销。</p></div></div><form id="keyForm" class="new-key"><div class="field"><label for="keyName">用途名称</label><input id="keyName" placeholder="例如：客服 Agent / 研究项目" maxlength="60" required></div><button class="btn btn-primary" type="submit">生成 Key</button></form><div id="revealBox" class="reveal hidden"><strong>Key 已创建，请现在保存完整值</strong><div class="reveal-line"><code id="newKeyValue"></code><button class="btn btn-quiet" data-copy="newKeyValue">复制</button></div></div></div>
+        <div class="panel panel-pad" style="margin-top:17px"><div class="panel-title"><h2>当前账户的 Key</h2><button class="icon-btn" id="refreshKeys" title="刷新列表">↻</button></div><div id="keyList" class="key-list"></div></div>
+      </section>
+
+      <section id="view-guide" class="view">
+        <div class="view-head"><div><div class="eyebrow">Protocol</div><h1>MCP 接入</h1><p>使用标准 Streamable HTTP 连接 JEV，不需要额外 REST 适配层。</p></div><button class="btn btn-primary" data-go="keys">管理访问 Key</button></div>
+        <div class="grid two">
+          <div class="panel panel-pad"><div class="panel-title"><h2>连接参数</h2></div><div class="field"><label>MCP URL</label><div class="endpoint"><code id="guideEndpoint"></code><button class="icon-btn" data-copy="guideEndpoint" title="复制端点">⧉</button></div></div><div class="field"><label>认证方式</label><div class="endpoint"><code>Authorization: Bearer &lt;YOUR_KEY&gt;</code></div></div><div class="field"><label>工具名称</label><div class="endpoint"><code>jev_decide</code></div></div></div>
+          <div class="panel panel-pad"><div class="panel-title"><h2>接入步骤</h2></div><div class="guide-step"><div class="step-number">1</div><div><strong>生成个人 Key</strong><p>前往“访问 Key”创建凭证，并妥善保存完整值。</p></div></div><div class="guide-step"><div class="step-number">2</div><div><strong>配置 MCP 客户端</strong><p>将 URL 和 Bearer Key 写入客户端的 MCP Server 配置。</p></div></div><div class="guide-step"><div class="step-number">3</div><div><strong>调用 jev_decide</strong><p>传入 state 和 questions，模型会按输入顺序返回结构化 results。</p></div></div></div>
+        </div>
+        <div class="panel panel-pad" style="margin-top:17px"><div class="panel-title"><div><h2>Python MCP Client 示例</h2><p style="margin-top:5px">适用于支持 MCP Python SDK 的 Agent 服务。</p></div><button class="icon-btn" data-copy="pythonExample" title="复制示例">⧉</button></div><pre id="pythonExample" class="code-block"></pre></div>
+        <div class="panel panel-pad" style="margin-top:17px"><div class="panel-title"><h2>工具输入约定</h2></div><pre id="schemaExample" class="code-block"></pre></div>
+      </section>
+    </div>
+  </main>
+</div>
+<div id="toast" class="toast hidden" style="position:fixed;right:24px;bottom:24px;padding:11px 14px;background:#153d3d;color:#fff"></div>
+
+<script>
+const state = { mode: 'login', user: null, keys: [], endpoint: `${window.location.origin}/mcp` };
+const $ = (id) => document.getElementById(id);
+const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+const dateText = (stamp) => stamp ? new Date(stamp * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '尚未使用';
+
+async function api(path, options = {}) {
+  const response = await fetch(path, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  let payload = {};
+  try { payload = await response.json(); } catch (_) {}
+  if (!response.ok) { const error = new Error(payload.detail || `请求失败（${response.status}）`); error.status = response.status; throw error; }
+  return payload;
+}
+
+function setAuthMode(mode) {
+  state.mode = mode;
+  document.querySelectorAll('[data-auth-mode]').forEach((button) => button.classList.toggle('active', button.dataset.authMode === mode));
+  $('authTitle').textContent = mode === 'login' ? '欢迎回来' : '创建你的账户';
+  $('authLead').textContent = mode === 'login' ? '登录后管理你的 MCP 接入凭证。' : '注册完成后即可生成属于自己的 MCP Key。';
+  $('authSubmit').textContent = mode === 'login' ? '登录到控制台' : '创建账户并继续';
+  $('password').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  $('authMessage').textContent = '';
+}
+
+function showToast(message) {
+  const toast = $('toast'); toast.textContent = message; toast.classList.remove('hidden');
+  window.clearTimeout(showToast.timer); showToast.timer = window.setTimeout(() => toast.classList.add('hidden'), 2200);
+}
+
+function showApp(user) {
+  state.user = user;
+  $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden');
+  $('userName').textContent = user.username; $('avatar').textContent = user.username.slice(0, 1).toUpperCase();
+  $('mcpEndpoint').textContent = state.endpoint; $('guideEndpoint').textContent = state.endpoint;
+  renderSnippets(); refreshDashboard();
+}
+
+function showAuth() { $('authScreen').classList.remove('hidden'); $('appShell').classList.add('hidden'); }
+
+function renderSnippets() {
+  const command = `MCP URL\n${state.endpoint}\n\nAuthorization\nBearer YOUR_KEY`;
+  $('quickCodeText').textContent = command;
+  $('pythonExample').textContent = `from mcp import ClientSession\nfrom mcp.client.streamable_http import streamablehttp_client\n\nasync with streamablehttp_client(\n    "${state.endpoint}",\n    headers={"Authorization": "Bearer YOUR_KEY"},\n) as (read, write, _):\n    async with ClientSession(read, write) as session:\n        await session.initialize()\n        result = await session.call_tool("jev_decide", {\n            "situation": "客户的订单到货时损坏，要求退款。",\n            "questions": [{\n                "type": "choice",\n                "question": "接下来应该怎么处理？",\n                "options": ["退款", "补充信息", "升级处理"],\n            }],\n        })`;
+  $('schemaExample').textContent = `situation: string\nquestions: [\n  {\n    type: "choice" | "score" | "yes_no",\n    question: string,\n    options?: string[]\n  }\n]\n\n返回：{ model, results }`;
+}
+
+async function refreshDashboard() {
+  try {
+    const [status, keyData] = await Promise.all([api('/api/status'), api('/api/keys')]);
+    state.keys = keyData.keys || [];
+    $('metricDevice').textContent = (status.device || 'CPU').toUpperCase();
+    $('metricKeys').textContent = state.keys.length;
+    $('metricModel').textContent = status.ready ? 'JEV' : '等待';
+    const badge = $('modelBadge'); badge.classList.toggle('warn', !status.ready); badge.innerHTML = status.ready ? '<span class="dot"></span> 已就绪' : '! 模型未就绪';
+    $('topDot').classList.toggle('warn', !status.ready); $('topStatus').textContent = status.ready ? '服务运行中' : '模型加载异常';
+    $('modelMessage').textContent = status.ready ? '模型以单实例方式加载，所有 MCP 请求共享同一个推理进程。' : (status.error || '模型正在加载，请稍后刷新。');
+    renderKeys();
+  } catch (error) { if (error.status === 401) showAuth(); }
+}
+
+function renderKeys() {
+  if (!state.keys.length) { $('keyList').innerHTML = '<div class="empty">当前还没有 Key。创建一个后，MCP 客户端才能访问模型。</div>'; return; }
+  $('keyList').innerHTML = state.keys.map((key) => `<div class="key-row"><div class="key-name">${escapeHtml(key.name)}</div><div class="key-prefix mono">${escapeHtml(key.prefix)}</div><div class="key-date">创建于 ${dateText(key.created_at)}<br>最近使用：${dateText(key.last_used_at)}</div><div class="key-action"><button class="btn btn-danger" data-revoke="${key.id}">吊销</button></div></div>`).join('');
+  document.querySelectorAll('[data-revoke]').forEach((button) => button.addEventListener('click', async () => {
+    if (!window.confirm('吊销后这个 Key 将立即无法调用 MCP，确定继续吗？')) return;
+    try { await api(`/api/keys/${button.dataset.revoke}`, { method: 'DELETE' }); showToast('Key 已吊销'); await refreshDashboard(); } catch (error) { showToast(error.message); }
+  }));
+}
+
+function openView(view) {
+  document.querySelectorAll('.view').forEach((item) => item.classList.toggle('active', item.id === `view-${view}`));
+  document.querySelectorAll('.nav-btn').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
+  $('crumbName').textContent = ({ overview: '总览', keys: '访问 Key', guide: 'MCP 接入' })[view];
+  if (view === 'keys') refreshDashboard();
+}
+
+document.querySelectorAll('[data-auth-mode]').forEach((button) => button.addEventListener('click', () => setAuthMode(button.dataset.authMode)));
+document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => openView(button.dataset.view)));
+document.querySelectorAll('[data-go]').forEach((button) => button.addEventListener('click', () => openView(button.dataset.go)));
+document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async () => {
+  const target = $(button.dataset.copy); const text = target.textContent;
+  try { await navigator.clipboard.writeText(text); showToast('已复制到剪贴板'); } catch (_) { showToast('复制失败，请手动选择'); }
+}));
+
+$('authForm').addEventListener('submit', async (event) => {
+  event.preventDefault(); $('authMessage').textContent = '';
+  try {
+    const result = await api(`/api/auth/${state.mode === 'login' ? 'login' : 'register'}`, { method: 'POST', body: JSON.stringify({ username: $('username').value.trim(), password: $('password').value }) });
+    showApp(result.user);
+  } catch (error) { $('authMessage').textContent = error.message; }
+});
+
+$('keyForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const result = await api('/api/keys', { method: 'POST', body: JSON.stringify({ name: $('keyName').value.trim() }) });
+    $('newKeyValue').textContent = result.key; $('revealBox').classList.remove('hidden'); $('keyName').value = ''; showToast('Key 已创建'); await refreshDashboard();
+  } catch (error) { showToast(error.message); }
+});
+$('refreshKeys').addEventListener('click', refreshDashboard);
+$('logoutBtn').addEventListener('click', async () => { await api('/api/auth/logout', { method: 'POST' }); showAuth(); });
+
+(async function boot() {
+  try { const result = await api('/api/auth/me'); showApp(result.user); }
+  catch (_) { showAuth(); }
+})();
+</script>
+</body>
+</html>
