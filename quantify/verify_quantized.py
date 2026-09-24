@@ -51,13 +51,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = args.artifact.expanduser().resolve()
     manifest = validate(root)
-    print(json.dumps({
+    summary = {
         "artifact": str(root),
         "model": manifest.get("model"),
         "bits": manifest["quantization"]["bits"],
         "base_quantization": manifest["quantization"].get("base_model"),
         "file_count": len(manifest.get("files", [])),
-    }, ensure_ascii=False, indent=2))
+    }
+    if summary["base_quantization"] == "same":
+        summary["warning"] = (
+            "The multimodal Gemma base is quantized. Rebuild with "
+            "--base-quantization none for reliable image/audio/video inference."
+        )
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
 
     if args.probe:
         project_root = Path(__file__).resolve().parents[1]

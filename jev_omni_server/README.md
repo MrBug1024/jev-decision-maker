@@ -17,6 +17,8 @@ Set `JEV_OMNI_QUANTIZATION=4bit` to make the default model path `../models/jev-o
 
 The service uses port `8020` by default and exposes the same console, SQLite account/key management, MCP endpoint, and `jev_decide` tool shape as the original service. It accepts text, image, audio, and video input in the browser test console. Audio conversion requires `ffmpeg` on `PATH`; video decoding uses OpenCV.
 
+For reliable image/audio/video decisions, the bundle must have `quantization.base_model` set to `none`. Rebuild an older `base_model: same` bundle with `--base-quantization none`; the server logs a warning for the older low-memory artifact because quantizing the Gemma multimodal base can produce first-option position bias.
+
 On startup, the service migrates the shared SQLite database by adding the user `role` column and the `api_call_logs` audit table. The existing account named `admin` is promoted to the administrator role automatically. Administrators can view all registered users and filter all Jev-Omni calls by user, Key, source, and status; regular users can only view their own calls. Audit records contain metadata only: no password, full API Key, prompt, or uploaded media is stored.
 
 For INT8 bundles, `JEV_OMNI_MODEL_DTYPE=auto` selects FP16 at runtime because bitsandbytes INT8 kernels consume FP16 inputs. This avoids repeated BF16-to-FP16 conversion warnings. Set `JEV_OMNI_MODEL_DTYPE=bf16` only when that conversion is intentional.

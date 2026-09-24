@@ -42,6 +42,13 @@ class ModelRuntime:
             raise RuntimeError("Jev-Omni does not support CPU inference")
         model = LocalJevOmni.from_bundle(self.settings.model_path, self.settings)
         manifest = model.manifest
+        base_quantization = manifest.get("quantization", {}).get("base_model")
+        if base_quantization == "same":
+            print(
+                "WARNING: this bundle quantizes the Gemma multimodal base. "
+                "Rebuild with --base-quantization none for reliable image/audio/video inference.",
+                flush=True,
+            )
         devices = sorted(
             {
                 str(value)

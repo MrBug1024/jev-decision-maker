@@ -508,7 +508,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--output", required=True, help="New output directory; it must not already exist")
     parser.add_argument("--bits", type=int, choices=(4, 8), required=True)
-    parser.add_argument("--base-quantization", choices=("same", "none"), default="same")
+    parser.add_argument(
+        "--base-quantization",
+        choices=("same", "none"),
+        default="none",
+        help=(
+            "Quantize the Gemma multimodal base as well, or keep its vision/audio "
+            "path in the original floating-point dtype (default: none)"
+        ),
+    )
     parser.add_argument("--compute-dtype", choices=("bf16", "fp16"), default="bf16")
     parser.add_argument("--device-map", default="auto", choices=("auto", "balanced", "balanced_low_0"))
     parser.add_argument("--max-memory", action="append", default=[], metavar="INDEX=VALUE")
@@ -590,7 +598,14 @@ def main(argv: list[str] | None = None) -> int:
         del decoder
         torch.cuda.empty_cache()
 
-        print(f"Loading Gemma base model ({args.base_quantization}) ...", flush=True)
+        if args.base_quantization == "none":
+            print(
+                "Loading Gemma multimodal base without weight quantization "
+                "(vision/audio fidelity mode) ...",
+                flush=True,
+            )
+        else:
+            print(f"Loading Gemma base model ({args.base_quantization}) ...", flush=True)
         base_model = load_base_model(
             base,
             bits=args.bits if args.base_quantization == "same" else None,

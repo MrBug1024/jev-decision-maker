@@ -98,6 +98,19 @@ def _quantization_config(bits: int | None, compute_dtype):
     raise ValueError("Only 4-bit and 8-bit Jev-Omni bundles are supported")
 
 
+def _configure_cuda_for_reference_inference() -> None:
+    """Match the official Space's CUDA settings for stable multimodal scores."""
+    import torch
+
+    torch.set_float32_matmul_precision("highest")
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    # The official Space disables cuDNN SDPA because one CUDA image had a
+    # version mismatch. The other SDPA backends remain available.
+    if hasattr(torch.backends.cuda, "enable_cudnn_sdp"):
+        torch.backends.cuda.enable_cudnn_sdp(False)
+
+
 def _max_memory(settings) -> dict[int | str, int | str]:
     import torch
 
@@ -236,6 +249,36 @@ class LocalJevOmni:
             else {}
         )
 
+    def _validate_multimodal_inputs(self, inputs: Any, modality: str) -> None:
+        """Fail loudly when a processor call did not produce media features."""
+        import torch
+
+        if modality == "text":
+            return
+
+        required = {
+            "image": "pixel_values",
+            "video": "pixel_values_videos",
+            "audio": "input_features",
+        }[modality]
+        payload = inputs.get(required)
+        if not isinstance(payload, torch.Tensor) or payload.numel() == 0:
+            raise RuntimeError(
+                f"The processor did not create {required} for {modality} input. "
+                "The uploaded media did not reach the Gemma multimodal path."
+            )
+
+        input_ids = inputs.get("input_ids")
+        if modality == "image" and isinstance(input_ids, torch.Tensor):
+            token_id = getattr(self.processor, "image_token_id", None)
+            if token_id is None:
+                token_id = getattr(getattr(self.model, "config", None), "image_token_id", None)
+            if token_id is not None and not bool((input_ids == token_id).any().item()):
+                raise RuntimeError(
+                    "The processor created image pixels but no image placeholder token. "
+                    "Check the bundled tokenizer/chat template files."
+                )
+
     @classmethod
     def from_bundle(cls, root: Path, settings=None) -> "LocalJevOmni":
         import torch
@@ -272,6 +315,7 @@ class LocalJevOmni:
             # warning on every MatMul8bitLt call.
             dtype_name = "fp16" if bits == 8 else quant.get("compute_dtype", "bf16")
         compute_dtype = _dtype(dtype_name)
+        _configure_cuda_for_reference_inference()
         settings.offload_dir.mkdir(parents=True, exist_ok=True)
         max_memory = _max_memory(settings)
         placement = _placement(settings, max_memory)
@@ -393,7 +437,8 @@ class LocalJevOmni:
         content: list[dict[str, Any]] = []
         temporary: Path | None = None
         if modality == "image":
-            content.append({"type": "image", "image": Image.open(media).convert("RGB")})
+            with Image.open(media) as image:
+                content.append({"type": "image", "image": image.convert("RGB")})
         elif modality == "video":
             content.extend({"type": "image", "image": frame} for frame in self._video_frames(media, video_frames))
         elif modality == "audio":
@@ -418,6 +463,8 @@ class LocalJevOmni:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+
+        self._validate_multimodal_inputs(inputs, modality)
 
         prepared = {
             key: value.to(self.device, dtype=self.compute_dtype) if torch.is_floating_point(value) else value.to(self.device)
