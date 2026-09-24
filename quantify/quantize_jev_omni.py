@@ -256,15 +256,32 @@ def _state_dict_for_saving(model):
         isinstance(value, torch.Tensor) and value.device.type == "meta"
         for value in state_dict.values()
     ):
-        try:
-            from accelerate.utils.modeling import get_state_dict_from_offloaded_model
-        except ImportError as exc:
+        offload_state_dict = None
+        for function_name in (
+            "get_state_dict_from_offloaded_model",
+            "get_state_dict_offloaded_model",
+        ):
+            try:
+                modeling = importlib.import_module("accelerate.utils.modeling")
+                offload_state_dict = getattr(modeling, function_name)
+                break
+            except (AttributeError, ImportError):
+                continue
+        if offload_state_dict is None:
             raise RuntimeError(
                 "The quantized model contains meta tensors after CPU offload, "
                 "but this Accelerate version cannot materialize its state_dict. "
-                "Upgrade accelerate and rerun the quantization."
-            ) from exc
-        state_dict = get_state_dict_from_offloaded_model(model)
+                "Install a recent accelerate package and rerun the quantization."
+            )
+        offloaded = offload_state_dict(model)
+        # Some Accelerate releases return only named parameters here. Preserve
+        # non-meta auxiliary entries such as bitsandbytes' SCB tensors too.
+        for name, value in state_dict.items():
+            if name not in offloaded and not (
+                isinstance(value, torch.Tensor) and value.device.type == "meta"
+            ):
+                offloaded[name] = value
+        state_dict = offloaded
 
     materialized = {}
     for name, value in state_dict.items():
