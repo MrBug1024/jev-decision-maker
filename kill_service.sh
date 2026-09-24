@@ -82,13 +82,37 @@ service_name_for_pid() {
 }
 
 collect_targets() {
-    local proc pid name
+    local pid uid cmd cwd service name
 
-    for proc in /proc/[0-9]*; do
-        pid="${proc##*/}"
-        name="$(service_name_for_pid "$pid" || true)"
-        [[ -n "$name" ]] && printf '%s|%s\n' "$pid" "$name"
-    done | sort -t '|' -k1,1n -u
+    # Filter the process table first. Reading /proc for every process is
+    # unnecessarily slow on hosts running many unrelated services.
+    while read -r pid uid cmd; do
+        [[ "$uid" == "$CURRENT_UID" ]] || continue
+        case "$cmd" in
+            *server.py*|*server:app*|*open_jev_server.server:app*|*jev_omni_server.server:app*) ;;
+            *) continue ;;
+        esac
+
+        cwd="$(process_cwd "$pid")"
+        for service in "${SERVICE_DIRS[@]}"; do
+            name="${service##*/}"
+            if [[ "$cwd" == "$service" ]] && {
+                [[ "$cmd" == *"server.py"* ]] ||
+                [[ "$cmd" == *"server:app"* ]] ||
+                [[ "$cmd" == *"$name.server:app"* ]]
+            }; then
+                printf '%s|%s\n' "$pid" "$name"
+                break
+            fi
+            if [[ "$cwd" == "$PROJECT_ROOT" ]] && {
+                [[ "$cmd" == *"$name.server:app"* ]] ||
+                [[ "$cmd" == *"$service/server.py"* ]]
+            }; then
+                printf '%s|%s\n' "$pid" "$name"
+                break
+            fi
+        done
+    done < <(ps -eo pid=,euid=,args=) | sort -t '|' -k1,1n -u
 }
 
 print_target() {
