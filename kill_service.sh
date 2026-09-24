@@ -3,8 +3,8 @@
 set -u
 
 PORT=8019
-VENV_MARK="jev-decision-maker"
-PROJECT_DIR="$HOME/work/jev-decision-maker"
+VENV_MARK="omin-decision-maker"
+PROJECT_DIR="$HOME/work/jev-decision-maker/jev_omni_server"
 APP_MARK="open_jev_server.server:app"
 
 # ---- 1. 端口反查（只看自己的进程；不是自己的在没 sudo 下也看不到，反而更安全）----
