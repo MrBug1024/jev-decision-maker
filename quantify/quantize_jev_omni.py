@@ -241,11 +241,30 @@ def copy_base_bundle(source: Path, destination: Path) -> None:
 
 def save_model(model, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(
-        destination,
-        safe_serialization=True,
-        max_shard_size="4GB",
-    )
+    try:
+        model.save_pretrained(
+            destination,
+            safe_serialization=True,
+            max_shard_size="4GB",
+        )
+    except AttributeError as exc:
+        # Transformers 5.17 can mistake bitsandbytes INT8 SCB metadata for a
+        # tied parameter while writing safetensors. A PyTorch checkpoint keeps
+        # the same quantized tensors and is loadable by from_pretrained.
+        if ".SCB" not in str(exc):
+            raise
+        print(
+            "Safetensors cannot serialize bitsandbytes SCB metadata; "
+            "retrying with a PyTorch checkpoint ...",
+            flush=True,
+        )
+        shutil.rmtree(destination, ignore_errors=True)
+        destination.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(
+            destination,
+            safe_serialization=False,
+            max_shard_size="4GB",
+        )
 
 
 def file_inventory(root: Path) -> list[dict[str, Any]]:

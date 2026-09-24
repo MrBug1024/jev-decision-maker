@@ -16,6 +16,7 @@ REQUIRED_FILES = (
     "backbone/config.json",
     "base_model/config.json",
 )
+WEIGHT_SUFFIXES = {".safetensors", ".bin", ".pt", ".pth", ".ckpt"}
 
 
 def validate(root: Path) -> dict:
@@ -26,6 +27,13 @@ def validate(root: Path) -> dict:
     for relative in REQUIRED_FILES:
         if not (root / relative).exists():
             raise ValueError(f"Required artifact is missing: {relative}")
+    for component in ("backbone", "base_model"):
+        component_root = root / component
+        if not any(
+            path.is_file() and path.suffix in WEIGHT_SUFFIXES
+            for path in component_root.rglob("*")
+        ):
+            raise ValueError(f"No model weight file found under {component}/")
     quant = manifest.get("quantization", {})
     if quant.get("bits") not in {4, 8}:
         raise ValueError("manifest quantization.bits must be 4 or 8")
