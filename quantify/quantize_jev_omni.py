@@ -234,37 +234,102 @@ def copy_base_bundle(source: Path, destination: Path) -> None:
     shutil.copytree(
         source,
         destination,
-        ignore=shutil.ignore_patterns("*.safetensors", "*.bin", "*.pt", "*.pth", "*.ckpt", "*.onnx"),
+        ignore=shutil.ignore_patterns(
+            "*.safetensors",
+            "*.bin",
+            "*.pt",
+            "*.pth",
+            "*.ckpt",
+            "*.safetensors.index.json",
+            "*.bin.index.json",
+            "*.onnx",
+        ),
         dirs_exist_ok=True,
     )
 
 
+def _state_dict_for_saving(model):
+    import torch
+
+    state_dict = model.state_dict()
+    if any(
+        isinstance(value, torch.Tensor) and value.device.type == "meta"
+        for value in state_dict.values()
+    ):
+        try:
+            from accelerate.utils.modeling import get_state_dict_from_offloaded_model
+        except ImportError as exc:
+            raise RuntimeError(
+                "The quantized model contains meta tensors after CPU offload, "
+                "but this Accelerate version cannot materialize its state_dict. "
+                "Upgrade accelerate and rerun the quantization."
+            ) from exc
+        state_dict = get_state_dict_from_offloaded_model(model)
+
+    materialized = {}
+    for name, value in state_dict.items():
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"Model state entry {name!r} is not a tensor")
+        if value.device.type == "meta":
+            raise RuntimeError(f"Model state entry {name!r} is still on the meta device")
+        materialized[name] = value.detach().cpu()
+    return materialized
+
+
+def _save_torch_state_dict(state_dict, destination: Path, *, max_shard_bytes: int) -> None:
+    import torch
+
+    shards: list[dict[str, Any]] = []
+    current: dict[str, Any] = {}
+    current_bytes = 0
+    for name, value in state_dict.items():
+        value_bytes = value.numel() * value.element_size()
+        if current and current_bytes + value_bytes > max_shard_bytes:
+            shards.append(current)
+            current = {}
+            current_bytes = 0
+        current[name] = value
+        current_bytes += value_bytes
+    if current:
+        shards.append(current)
+
+    if len(shards) == 1:
+        torch.save(shards[0], destination / "pytorch_model.bin")
+        return
+
+    total = len(shards)
+    weight_map: dict[str, str] = {}
+    total_bytes = 0
+    for index, shard in enumerate(shards, 1):
+        filename = f"pytorch_model-{index:05d}-of-{total:05d}.bin"
+        torch.save(shard, destination / filename)
+        for name, value in shard.items():
+            weight_map[name] = filename
+            total_bytes += value.numel() * value.element_size()
+    (destination / "pytorch_model.bin.index.json").write_text(
+        json.dumps(
+            {"metadata": {"total_size": total_bytes}, "weight_map": weight_map},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def save_model(model, destination: Path) -> None:
+    """Save without Transformers' tied-weight pass, which breaks bnb INT8 SCB."""
     destination.mkdir(parents=True, exist_ok=True)
-    try:
-        model.save_pretrained(
-            destination,
-            safe_serialization=True,
-            max_shard_size="4GB",
-        )
-    except AttributeError as exc:
-        # Transformers 5.17 can mistake bitsandbytes INT8 SCB metadata for a
-        # tied parameter while writing safetensors. A PyTorch checkpoint keeps
-        # the same quantized tensors and is loadable by from_pretrained.
-        if ".SCB" not in str(exc):
-            raise
-        print(
-            "Safetensors cannot serialize bitsandbytes SCB metadata; "
-            "retrying with a PyTorch checkpoint ...",
-            flush=True,
-        )
-        shutil.rmtree(destination, ignore_errors=True)
-        destination.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(
-            destination,
-            safe_serialization=False,
-            max_shard_size="4GB",
-        )
+    if not hasattr(model, "config") or not hasattr(model.config, "save_pretrained"):
+        raise TypeError("The loaded model does not expose a Hugging Face config")
+
+    print("Materializing quantized state_dict on CPU for checkpoint export ...", flush=True)
+    state_dict = _state_dict_for_saving(model)
+    model.config.save_pretrained(destination)
+    _save_torch_state_dict(
+        state_dict,
+        destination,
+        max_shard_bytes=4 * 1024**3,
+    )
 
 
 def file_inventory(root: Path) -> list[dict[str, Any]]:

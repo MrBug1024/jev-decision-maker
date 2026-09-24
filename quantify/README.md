@@ -21,6 +21,8 @@ python quantify/quantize_jev_omni.py \
 
 The same command can be run from inside `quantify/`; paths beginning with `models/` still resolve under the project root. The first run downloads several large files and requires network access and enough disk space for both raw models and the quantized output.
 
+The exporter writes standard PyTorch checkpoint shards directly from the quantized `state_dict`. This avoids a `Transformers 5.17` save bug involving bitsandbytes INT8 `SCB` metadata; seeing `model.save_pretrained` in a traceback means the Linux host is still running an older copy of the script.
+
 For the smaller artifact:
 
 ```bash
