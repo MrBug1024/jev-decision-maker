@@ -21,3 +21,4 @@ jev_omni_server/model_offload/
 jev_omni_server/jev_omni_gateway.db
 jev_omni_server/jev_omni_gateway.db-shm
 jev_omni_server/jev_omni_gateway.db-wal
+kill_service.sh
