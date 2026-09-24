@@ -1,0 +1,10 @@
+torch>=2.10
+transformers==5.17.0
+accelerate
+bitsandbytes
+huggingface_hub
+safetensors
+numpy
+Pillow
+opencv-python-headless
+soundfile

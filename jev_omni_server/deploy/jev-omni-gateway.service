@@ -1,0 +1,18 @@
+[Unit]
+Description=Jev-Omni Quantized Model Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=jev
+Group=jev
+WorkingDirectory=/opt/jev-omni-server
+EnvironmentFile=/opt/jev-omni-server/.env
+ExecStart=/opt/jev-omni-server/.venv/bin/python /opt/jev-omni-server/server.py
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=infinity
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

@@ -129,7 +129,7 @@ def load_settings() -> Settings:
     return Settings(
         base_dir=BASE_DIR,
         index_html=BASE_DIR / "index.html",
-        database_path=_path(_env("OPEN_JEV_DB_PATH"), BASE_DIR / "jev_gateway.db"),
+        database_path=_path(_env("OPEN_JEV_DB_PATH"), BASE_DIR.parent / "data" / "jev_gateway.db"),
         model_id=_env(
             "OPEN_JEV_MODEL_ID",
             "com-kotobalabs/open-jev-deberta-v3-large",

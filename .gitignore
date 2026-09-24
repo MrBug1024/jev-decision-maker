@@ -13,3 +13,11 @@ jev_gateway.db-wal
 __pycache__
 .cache/
 xxx.log
+models/
+data/
+quantify/__pycache__/
+jev_omni_server/__pycache__/
+jev_omni_server/model_offload/
+jev_omni_server/jev_omni_gateway.db
+jev_omni_server/jev_omni_gateway.db-shm
+jev_omni_server/jev_omni_gateway.db-wal
