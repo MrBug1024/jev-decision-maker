@@ -8,6 +8,7 @@ import importlib
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -50,6 +51,59 @@ def parse_max_memory(values: list[str]) -> dict[int | str, str]:
         if not limit.strip():
             raise ValueError(f"Empty memory limit in {value!r}")
         result["cpu" if key.lower() == "cpu" else int(key)] = limit.strip()
+    return result
+
+
+def _memory_bytes(value: str | int) -> int:
+    if isinstance(value, int):
+        return value
+    match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*(B|KiB|MiB|GiB|TiB)\s*", str(value), re.I)
+    if not match:
+        raise ValueError(f"Unsupported memory size: {value!r}")
+    amount = float(match.group(1))
+    multiplier = {
+        "b": 1,
+        "kib": 1024,
+        "mib": 1024**2,
+        "gib": 1024**3,
+        "tib": 1024**4,
+    }[match.group(2).lower()]
+    return int(amount * multiplier)
+
+
+def usable_max_memory(
+    limits: dict[int | str, str],
+    *,
+    label: str,
+    reserve_gib: float = 6.0,
+) -> dict[int | str, int | str]:
+    """Remove GPUs whose real free memory cannot cover load-time peaks."""
+    import torch
+
+    reserve = int(reserve_gib * 1024**3)
+    result: dict[int | str, int | str] = {}
+    usable_gpu_count = 0
+    for index, requested in limits.items():
+        if index == "cpu":
+            result[index] = requested
+            continue
+        free, _ = torch.cuda.mem_get_info(index)
+        available = free - reserve
+        requested_bytes = _memory_bytes(requested)
+        if available < 4 * 1024**3:
+            print(
+                f"{label}: excluding cuda:{index}; only {free / 1024**3:.2f} GiB "
+                f"is free, with {reserve_gib:.1f} GiB reserved for load-time peaks",
+                flush=True,
+            )
+            continue
+        result[index] = min(requested_bytes, available)
+        usable_gpu_count += 1
+    if not usable_gpu_count:
+        raise RuntimeError(
+            f"{label} has no GPU with enough free memory for a safe load. "
+            "Stop other GPU processes or increase available VRAM."
+        )
     return result
 
 
@@ -185,7 +239,10 @@ def load_model(
         "low_cpu_mem_usage": True,
     }
     if max_memory:
-        kwargs["max_memory"] = max_memory
+        kwargs["max_memory"] = usable_max_memory(
+            max_memory,
+            label="Jev-Omni backbone",
+        )
     if bits is not None:
         kwargs["quantization_config"] = build_quantization_config(bits, compute_dtype)
     return cls.from_pretrained(source / "backbone", **kwargs).eval()
@@ -215,7 +272,10 @@ def load_base_model(
         "low_cpu_mem_usage": True,
     }
     if max_memory:
-        kwargs["max_memory"] = max_memory
+        kwargs["max_memory"] = usable_max_memory(
+            max_memory,
+            label="Gemma base model",
+        )
     if bits is not None:
         kwargs["quantization_config"] = build_quantization_config(bits, compute_dtype)
     return cls.from_pretrained(source, **kwargs).eval()

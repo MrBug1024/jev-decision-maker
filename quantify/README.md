@@ -23,6 +23,8 @@ The same command can be run from inside `quantify/`; paths beginning with `model
 
 The exporter writes standard PyTorch checkpoint shards directly from the quantized `state_dict`. This avoids a `Transformers 5.17` save bug involving bitsandbytes INT8 `SCB` metadata; seeing `model.save_pretrained` in a traceback means the Linux host is still running an older copy of the script.
 
+Before each model load, the exporter checks real free VRAM and removes a GPU whose load-time headroom is too small. This prevents a busy secondary GPU from causing an OOM during Transformers' allocator warmup; the model is then placed on the remaining GPU and CPU offload.
+
 For the smaller artifact:
 
 ```bash
