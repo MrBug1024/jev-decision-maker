@@ -147,6 +147,36 @@ def _import_bundle_class(config: dict[str, Any], root: Path):
     return getattr(module, config["backbone_class"])
 
 
+def _load_processor(base_path: Path, *, trust_remote_code: bool):
+    """Load the Gemma 4 processor while preserving the real import failure."""
+    from transformers import AutoProcessor
+
+    errors: list[Exception] = []
+    for allow_remote_code in (False, trust_remote_code):
+        if allow_remote_code is False and not errors:
+            # Prefer the processor implementation shipped by Transformers when
+            # the local config does not require dynamic remote code.
+            pass
+        try:
+            return AutoProcessor.from_pretrained(
+                base_path,
+                trust_remote_code=allow_remote_code,
+            )
+        except Exception as exc:
+            errors.append(exc)
+            if allow_remote_code == trust_remote_code:
+                break
+
+    cause = errors[-1]
+    details = "; ".join(f"{type(error).__name__}: {error}" for error in errors)
+    raise RuntimeError(
+        "Could not load Gemma4UnifiedProcessor from the bundled base model. "
+        "Install jev_omni_server/requirements.txt including torchvision, "
+        "torchaudio, librosa, av, and torchcodec. "
+        f"Attempts: {details}"
+    ) from cause
+
+
 def _find_backbone(model):
     for path in ("model.language_model", "language_model.model", "model.text_model", "model"):
         node = model
@@ -210,7 +240,7 @@ class LocalJevOmni:
     def from_bundle(cls, root: Path, settings=None) -> "LocalJevOmni":
         import torch
         import transformers
-        from transformers import AutoConfig, AutoProcessor
+        from transformers import AutoConfig
 
         root = root.resolve()
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
@@ -299,7 +329,7 @@ class LocalJevOmni:
         del old_backbone
         torch.cuda.empty_cache()
 
-        processor = AutoProcessor.from_pretrained(
+        processor = _load_processor(
             base_path,
             trust_remote_code=settings.trust_remote_code,
         )

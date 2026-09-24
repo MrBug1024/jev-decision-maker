@@ -21,6 +21,7 @@ import logging
 import secrets
 import sqlite3
 import time
+import traceback
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
@@ -325,6 +326,7 @@ async def lifespan(_: FastAPI):
             print(f"Model loaded. Runtime: {runtime.status()}")
         except Exception as exc:  # The console can still report a useful startup error.
             runtime.set_error(str(exc))
+            traceback.print_exc()
             print(f"Model failed to load: {exc}")
     else:
         runtime.set_error("Model loading skipped by OPEN_JEV_SKIP_MODEL_LOAD")

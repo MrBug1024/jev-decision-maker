@@ -14,5 +14,10 @@ huggingface_hub
 safetensors
 numpy
 Pillow
+torchvision
+torchaudio
+librosa
+av
+torchcodec
 opencv-python-headless
 soundfile
