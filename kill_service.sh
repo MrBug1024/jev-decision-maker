@@ -2,7 +2,7 @@
 # 用: bash kill_service.sh   (不要加 sudo)
 set -u
 
-PORT=8019
+PORT=8020
 VENV_MARK="omin-decision-maker"
 PROJECT_DIR="$HOME/work/jev-decision-maker/jev_omni_server"
 APP_MARK="open_jev_server.server:app"
