@@ -20,3 +20,5 @@ The server never quantizes or downloads a model at startup. `JEV_OMNI_MODEL_PATH
 For a CPU-free production process, use one Uvicorn worker. The quantized bundle still requires a compatible Linux CUDA, PyTorch, Transformers, and bitsandbytes environment.
 
 SQLite sharing is intended for two services on the same machine. Do not place the SQLite file on NFS or use it as a cross-machine database; use PostgreSQL or another server database when the services run on different hosts.
+
+
