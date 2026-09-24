@@ -8,12 +8,16 @@ Create an artifact first with `quantify/quantize_jev_omni.py`, then configure `.
 
 ```bash
 cp .env.example .env
-CUDA_VISIBLE_DEVICES=0,1 python server.py
+python server.py
 ```
+
+The `.env` file controls the visible GPU and the bundled model. The default example uses `CUDA_VISIBLE_DEVICES=0`, `JEV_OMNI_MODEL_PATH=../models/jev-omni-int8`, and `JEV_OMNI_QUANTIZATION=8bit`; change those values there instead of prefixing them on every startup command.
 
 Set `JEV_OMNI_QUANTIZATION=4bit` to make the default model path `../models/jev-omni-int4`; otherwise the default is `../models/jev-omni-int8`. `JEV_OMNI_MODEL_PATH` always takes precedence.
 
 The service uses port `8020` by default and exposes the same console, SQLite account/key management, MCP endpoint, and `jev_decide` tool shape as the original service. It accepts text, image, audio, and video input in the browser test console. Audio conversion requires `ffmpeg` on `PATH`; video decoding uses OpenCV.
+
+On startup, the service migrates the shared SQLite database by adding the user `role` column and the `api_call_logs` audit table. The existing account named `admin` is promoted to the administrator role automatically. Administrators can view all registered users and filter all Jev-Omni calls by user, Key, source, and status; regular users can only view their own calls. Audit records contain metadata only: no password, full API Key, prompt, or uploaded media is stored.
 
 For INT8 bundles, `JEV_OMNI_MODEL_DTYPE=auto` selects FP16 at runtime because bitsandbytes INT8 kernels consume FP16 inputs. This avoids repeated BF16-to-FP16 conversion warnings. Set `JEV_OMNI_MODEL_DTYPE=bf16` only when that conversion is intentional.
 
@@ -22,4 +26,3 @@ The server never quantizes or downloads a model at startup. `JEV_OMNI_MODEL_PATH
 For a CPU-free production process, use one Uvicorn worker. The quantized bundle still requires a compatible Linux CUDA, PyTorch, Transformers, and bitsandbytes environment.
 
 SQLite sharing is intended for two services on the same machine. Do not place the SQLite file on NFS or use it as a cross-machine database; use PostgreSQL or another server database when the services run on different hosts.
-

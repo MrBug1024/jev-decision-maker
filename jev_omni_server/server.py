@@ -26,7 +26,7 @@ import traceback
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
-from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -56,6 +56,51 @@ MEDIA_EXTENSIONS = {
 
 def now() -> int:
     return int(time.time())
+
+
+def record_call(
+    *,
+    user_id: int | None,
+    api_key_id: int | None,
+    source: str,
+    tool_name: str | None,
+    input_type: str | None,
+    status: str,
+    status_code: int,
+    started_at: int,
+    duration_ms: int,
+    request_id: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Persist non-sensitive call metadata without affecting the request."""
+    try:
+        with db_connection() as db:
+            db.execute(
+                """
+                INSERT INTO api_call_logs (
+                    user_id, api_key_id, service, source, tool_name, input_type,
+                    status, status_code, started_at, duration_ms, request_id,
+                    error_message, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    api_key_id,
+                    "jev_omni",
+                    source,
+                    tool_name,
+                    input_type,
+                    status,
+                    status_code,
+                    started_at,
+                    max(0, int(duration_ms)),
+                    request_id,
+                    error_message[:500] if error_message else None,
+                    now(),
+                ),
+            )
+    except Exception:
+        logger.exception("Could not persist API call audit record")
 
 
 def db_connection() -> sqlite3.Connection:
@@ -99,14 +144,47 @@ def init_database() -> None:
                 revoked_at INTEGER
             );
 
+            CREATE TABLE IF NOT EXISTS api_call_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                api_key_id INTEGER REFERENCES api_keys(id) ON DELETE SET NULL,
+                service TEXT NOT NULL DEFAULT 'jev_omni',
+                source TEXT NOT NULL DEFAULT 'mcp',
+                tool_name TEXT,
+                input_type TEXT,
+                status TEXT NOT NULL,
+                status_code INTEGER,
+                started_at INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                request_id TEXT,
+                error_message TEXT,
+                created_at INTEGER NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_sessions_token_hash
                 ON sessions(token_hash);
             CREATE INDEX IF NOT EXISTS idx_api_keys_user_id
                 ON api_keys(user_id);
             CREATE INDEX IF NOT EXISTS idx_api_keys_active
                 ON api_keys(key_hash, revoked_at);
+            CREATE INDEX IF NOT EXISTS idx_call_logs_user_time
+                ON api_call_logs(user_id, started_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_call_logs_key_time
+                ON api_call_logs(api_key_id, started_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_call_logs_time
+                ON api_call_logs(started_at DESC);
             """
         )
+        user_columns = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+        if "role" not in user_columns:
+            try:
+                db.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+        # The existing admin account is promoted during migration; registration
+        # never accepts a role from the client.
+        db.execute("UPDATE users SET role = 'admin' WHERE lower(username) = 'admin'")
         db.execute("DELETE FROM sessions WHERE expires_at <= ?", (now(),))
 
 
@@ -148,6 +226,8 @@ def user_payload(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         "id": row["id"],
         "username": row["username"],
         "created_at": row["created_at"],
+        "role": row["role"],
+        "is_admin": row["role"] == "admin",
     }
 
 
@@ -167,7 +247,7 @@ def find_user_by_session(raw_token: str | None) -> sqlite3.Row | None:
     with db_connection() as db:
         return db.execute(
             """
-            SELECT users.id, users.username, users.created_at
+            SELECT users.id, users.username, users.created_at, users.role
             FROM sessions
             JOIN users ON users.id = sessions.user_id
             WHERE sessions.token_hash = ? AND sessions.expires_at > ?
@@ -183,7 +263,7 @@ def get_active_key(raw_key: str) -> sqlite3.Row | None:
         row = db.execute(
             """
             SELECT api_keys.id, api_keys.user_id, api_keys.name,
-                   users.username, api_keys.created_at
+                   api_keys.key_prefix, users.username, api_keys.created_at
             FROM api_keys
             JOIN users ON users.id = api_keys.user_id
             WHERE api_keys.key_hash = ? AND api_keys.revoked_at IS NULL
@@ -208,7 +288,11 @@ class MCPKeyVerifier(TokenVerifier):
             subject=str(key["user_id"]),
             scopes=["jev:decide"],
             resource=settings.mcp_resource_url,
-            claims={"username": key["username"], "key_name": key["name"]},
+            claims={
+                "key_id": key["id"],
+                "username": key["username"],
+                "key_name": key["name"],
+            },
         )
 
 
@@ -279,6 +363,99 @@ def require_user(jev_session: str | None = Cookie(default=None)) -> sqlite3.Row:
     if not user:
         raise HTTPException(status_code=401, detail="请先登录")
     return user
+
+
+def require_admin(user: sqlite3.Row = Depends(require_user)) -> sqlite3.Row:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可访问")
+    return user
+
+
+def mcp_call_context() -> tuple[int | None, int | None]:
+    token = get_access_token()
+    if token is None:
+        return None, None
+    claims = token.claims or {}
+    try:
+        user_id = int(token.subject) if token.subject is not None else None
+    except (TypeError, ValueError):
+        user_id = None
+    try:
+        key_id = int(claims["key_id"]) if claims.get("key_id") is not None else None
+    except (TypeError, ValueError):
+        key_id = None
+    return user_id, key_id
+
+
+def call_log_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "username": row["username"],
+        "key_id": row["api_key_id"],
+        "key_name": row["key_name"],
+        "key_prefix": f"{row['key_prefix']}..." if row["key_prefix"] else None,
+        "service": row["service"],
+        "source": row["source"],
+        "tool_name": row["tool_name"],
+        "input_type": row["input_type"],
+        "status": row["status"],
+        "status_code": row["status_code"],
+        "started_at": row["started_at"],
+        "duration_ms": row["duration_ms"],
+        "request_id": row["request_id"],
+        "error_message": row["error_message"],
+    }
+
+
+def fetch_call_logs(
+    *,
+    user_id: int | None,
+    key_id: int | None,
+    status: str | None,
+    source: str | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict[str, Any]], int]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if user_id is not None:
+        clauses.append("logs.user_id = ?")
+        params.append(user_id)
+    if key_id is not None:
+        clauses.append("logs.api_key_id = ?")
+        params.append(key_id)
+    if status:
+        clauses.append("logs.status = ?")
+        params.append(status)
+    if source:
+        clauses.append("logs.source = ?")
+        params.append(source)
+    where = " AND ".join(clauses)
+    select = """
+        FROM api_call_logs AS logs
+        LEFT JOIN users ON users.id = logs.user_id
+        LEFT JOIN api_keys ON api_keys.id = logs.api_key_id
+    """
+    with db_connection() as db:
+        total = db.execute(
+            f"SELECT COUNT(*) AS count {select} WHERE {where}", params
+        ).fetchone()["count"]
+        rows = db.execute(
+            f"""
+            SELECT logs.id, logs.user_id, users.username, logs.api_key_id,
+                   api_keys.name AS key_name, api_keys.key_prefix,
+                   logs.service, logs.source, logs.tool_name, logs.input_type,
+                   logs.status, logs.status_code, logs.started_at,
+                   logs.duration_ms, logs.request_id, logs.error_message
+            {select}
+            WHERE {where}
+            ORDER BY logs.started_at DESC, logs.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*params, limit, offset],
+        ).fetchall()
+    return [call_log_payload(row) for row in rows], int(total)
 
 
 def model_status() -> dict[str, Any]:
@@ -370,12 +547,55 @@ def build_mcp_server() -> FastMCP:
         Use choice for categorical classification, score for ordered levels,
         and yes_no for a binary statement. Results preserve input order.
         """
-        if get_access_token() is None:
+        started_at = now()
+        started = time.monotonic()
+        request_id = secrets.token_hex(8)
+        user_id, key_id = mcp_call_context()
+        if user_id is None or key_id is None:
+            record_call(
+                user_id=user_id,
+                api_key_id=key_id,
+                source="mcp",
+                tool_name="jev_decide",
+                input_type="text",
+                status="error",
+                status_code=401,
+                started_at=started_at,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                request_id=request_id,
+                error_message="MCP authentication is required",
+            )
             raise RuntimeError("MCP authentication is required")
         try:
             normalized = [question.to_model_question() for question in questions]
-            return {"model": settings.model_name, "results": runtime.decide(situation, normalized)}
+            result = runtime.decide(situation, normalized)
+            record_call(
+                user_id=user_id,
+                api_key_id=key_id,
+                source="mcp",
+                tool_name="jev_decide",
+                input_type="text",
+                status="success",
+                status_code=200,
+                started_at=started_at,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                request_id=request_id,
+            )
+            return {"model": settings.model_name, "results": result}
         except Exception as exc:
+            record_call(
+                user_id=user_id,
+                api_key_id=key_id,
+                source="mcp",
+                tool_name="jev_decide",
+                input_type="text",
+                status="error",
+                status_code=503 if "out of memory" in str(exc).lower() else 500,
+                started_at=started_at,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                request_id=request_id,
+                error_message=str(exc),
+            )
             raise RuntimeError(f"JEV inference failed: {exc}") from exc
 
     return server
@@ -412,17 +632,28 @@ def register(request: RegisterRequest) -> JSONResponse:
     username = request.username.strip()
     if len(username) < 2:
         raise HTTPException(status_code=400, detail="用户名至少需要 2 个字符")
+    created_at = now()
     try:
         with db_connection() as db:
             cursor = db.execute(
                 "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                (username, hash_password(request.password), now()),
+                (username, hash_password(request.password), created_at),
             )
             user_id = cursor.lastrowid
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="用户名已存在")
 
-    response = JSONResponse({"user": {"id": user_id, "username": username}})
+    response = JSONResponse(
+        {
+            "user": {
+                "id": user_id,
+                "username": username,
+                "created_at": created_at,
+                "role": "user",
+                "is_admin": False,
+            }
+        }
+    )
     set_session_cookie(response, create_session(int(user_id)))
     return response
 
@@ -431,7 +662,7 @@ def register(request: RegisterRequest) -> JSONResponse:
 def login(request: LoginRequest) -> JSONResponse:
     with db_connection() as db:
         user = db.execute(
-            "SELECT id, username, password_hash, created_at FROM users WHERE username = ? COLLATE NOCASE",
+            "SELECT id, username, password_hash, created_at, role FROM users WHERE username = ? COLLATE NOCASE",
             (request.username.strip(),),
         ).fetchone()
         if not user or not verify_password(request.password, user["password_hash"]):
@@ -468,6 +699,118 @@ def status(user: sqlite3.Row = Depends(require_user)) -> dict[str, Any]:
     return {**model_status(), "mcp_endpoint": settings.mcp_resource_url, "active_key_count": count}
 
 
+@app.get("/api/calls")
+def list_my_calls(
+    user: sqlite3.Row = Depends(require_user),
+    key_id: int | None = Query(default=None, ge=1),
+    status: str | None = Query(default=None, min_length=1, max_length=20),
+    source: str | None = Query(default=None, min_length=1, max_length=20),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    if key_id is not None:
+        with db_connection() as db:
+            owned = db.execute(
+                "SELECT 1 FROM api_keys WHERE id = ? AND user_id = ?",
+                (key_id, user["id"]),
+            ).fetchone()
+        if not owned:
+            raise HTTPException(status_code=404, detail="Key 不存在")
+    records, total = fetch_call_logs(
+        user_id=user["id"],
+        key_id=key_id,
+        status=status,
+        source=source,
+        limit=limit,
+        offset=offset,
+    )
+    return {"records": records, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/admin/users")
+def list_users(_: sqlite3.Row = Depends(require_admin)) -> dict[str, Any]:
+    with db_connection() as db:
+        users = db.execute(
+            """
+            SELECT users.id, users.username, users.role, users.created_at,
+                   users.last_login_at,
+                   (SELECT COUNT(*) FROM api_keys
+                    WHERE api_keys.user_id = users.id
+                      AND api_keys.revoked_at IS NULL) AS active_key_count,
+                   (SELECT COUNT(*) FROM api_call_logs
+                    WHERE api_call_logs.user_id = users.id) AS call_count
+            FROM users
+            ORDER BY users.created_at DESC, users.id DESC
+            """
+        ).fetchall()
+        keys = db.execute(
+            """
+            SELECT api_keys.id, api_keys.user_id, api_keys.name,
+                   api_keys.key_prefix, api_keys.created_at,
+                   api_keys.last_used_at, api_keys.revoked_at,
+                   users.username
+            FROM api_keys
+            JOIN users ON users.id = api_keys.user_id
+            ORDER BY api_keys.created_at DESC, api_keys.id DESC
+            """
+        ).fetchall()
+    return {
+        "users": [
+            {
+                "id": row["id"],
+                "username": row["username"],
+                "role": row["role"],
+                "created_at": row["created_at"],
+                "last_login_at": row["last_login_at"],
+                "active_key_count": row["active_key_count"],
+                "call_count": row["call_count"],
+            }
+            for row in users
+        ],
+        "keys": [
+            {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "username": row["username"],
+                "name": row["name"],
+                "prefix": f"{row['key_prefix']}...",
+                "created_at": row["created_at"],
+                "last_used_at": row["last_used_at"],
+                "revoked_at": row["revoked_at"],
+            }
+            for row in keys
+        ],
+    }
+
+
+@app.get("/api/admin/calls")
+def list_all_calls(
+    _: sqlite3.Row = Depends(require_admin),
+    user_id: int | None = Query(default=None, ge=1),
+    key_id: int | None = Query(default=None, ge=1),
+    status: str | None = Query(default=None, min_length=1, max_length=20),
+    source: str | None = Query(default=None, min_length=1, max_length=20),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    if user_id is not None and key_id is not None:
+        with db_connection() as db:
+            key_owner = db.execute(
+                "SELECT user_id FROM api_keys WHERE id = ?", (key_id,)
+            ).fetchone()
+        if key_owner is None or key_owner["user_id"] != user_id:
+            raise HTTPException(status_code=400, detail="所选 Key 不属于所选用户")
+    records, total = fetch_call_logs(
+        user_id=user_id,
+        key_id=key_id,
+        status=status,
+        source=source,
+        limit=limit,
+        offset=offset,
+    )
+    return {"records": records, "total": total, "limit": limit, "offset": offset}
+
+
 @app.post("/api/test/decide")
 async def test_decide(
     input_type: Literal["text", "image", "audio", "video"] = Form("text"),
@@ -479,29 +822,57 @@ async def test_decide(
     user: sqlite3.Row = Depends(require_user),
 ) -> dict[str, Any]:
     """Run a browser-only test request; external model access remains MCP-only."""
-    del user
+    started_at = now()
+    started = time.monotonic()
+    request_id = secrets.token_hex(8)
+
+    def audit(status: str, status_code: int, error_message: str | None = None) -> None:
+        record_call(
+            user_id=user["id"],
+            api_key_id=None,
+            source="console",
+            tool_name="test_decide",
+            input_type=input_type,
+            status=status,
+            status_code=status_code,
+            started_at=started_at,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            request_id=request_id,
+            error_message=error_message,
+        )
+
     if not situation.strip():
+        audit("error", 422, "Situation 不能为空")
         raise HTTPException(status_code=422, detail="Situation 不能为空。")
     if not question.strip():
+        audit("error", 422, "Question 不能为空")
         raise HTTPException(status_code=422, detail="Question 不能为空。")
     current_status = runtime.status()
     if not current_status.get("ready"):
+        detail = current_status.get("error") or "模型尚未就绪，请稍后重试"
+        audit("error", 503, detail)
         raise HTTPException(
             status_code=503,
-            detail=current_status.get("error") or "模型尚未就绪，请稍后重试",
+            detail=detail,
         )
     if not runtime.supports_input_type(input_type):
         supported = ", ".join(current_status.get("supported_inputs") or []) or "无"
+        detail = f"当前模型暂不支持 {input_type} 输入，已实现能力：{supported}"
+        audit("error", 422, detail)
         raise HTTPException(
             status_code=422,
-            detail=f"当前模型暂不支持 {input_type} 输入，已实现能力：{supported}",
+            detail=detail,
         )
 
     media_bytes: bytes | None = None
     content_type: str | None = None
     filename: str | None = None
     if input_type != "text":
-        media_bytes, content_type = await validate_upload(media, input_type)
+        try:
+            media_bytes, content_type = await validate_upload(media, input_type)
+        except HTTPException as exc:
+            audit("error", exc.status_code, str(exc.detail))
+            raise
         filename = media.filename if media else None
 
     option_values = parse_options(options)
@@ -521,6 +892,7 @@ async def test_decide(
             detail = "Choice 至少需要 2 个选项，每行填写一个。"
         else:
             detail = message.removeprefix("Value error, ")
+        audit("error", 422, detail)
         raise HTTPException(status_code=422, detail=detail) from exc
 
     try:
@@ -538,6 +910,7 @@ async def test_decide(
         logger.exception("JEV inference failed (request_id=%s)", error_id)
         error_text = str(exc).lower()
         if "out of memory" in error_text or "cuda error: memory" in error_text:
+            audit("error", 503, str(exc))
             raise HTTPException(
                 status_code=503,
                 detail=(
@@ -545,10 +918,12 @@ async def test_decide(
                     "释放其他 GPU 占用，或调整模型量化/设备放置配置。"
                 ),
             ) from exc
+        audit("error", 500, str(exc))
         raise HTTPException(
             status_code=500,
             detail=f"模型推理失败（请求 {error_id}，{type(exc).__name__}）。请查看服务端日志。",
         ) from exc
+    audit("success", 200)
     return {
         "model": settings.model_name,
         "model_kind": settings.model_kind,

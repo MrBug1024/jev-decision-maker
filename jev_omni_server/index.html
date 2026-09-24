@@ -121,6 +121,21 @@
   .key-prefix { color: var(--teal-dark); font-size: 11px; }
   .key-date { color: var(--muted); font-size: 11px; }
   .key-action { justify-self: end; }
+  .audit-toolbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; gap: 12px; padding: 16px; background: #edf6f3; border: 1px solid #cce5df; }
+  .audit-toolbar .field { margin: 0; }
+  .audit-table-wrap { overflow-x: auto; }
+  .audit-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 11px; }
+  .audit-table th { padding: 11px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 850; text-align: left; white-space: nowrap; }
+  .audit-table td { padding: 12px 10px; border-bottom: 1px solid #edf0ef; vertical-align: top; }
+  .audit-table tbody tr:hover { background: #f8fbfa; }
+  .audit-table .secondary { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+  .audit-table .error-text { max-width: 260px; color: #a54431; line-height: 1.45; white-space: normal; word-break: break-word; }
+  .status-pill { display: inline-flex; padding: 4px 7px; background: var(--teal-soft); color: var(--teal-dark); font-size: 10px; font-weight: 850; }
+  .status-pill.error { background: var(--coral-soft); color: #a54431; }
+  .user-table { min-width: 620px; }
+  .user-table-wrap { overflow-x: auto; }
+  .admin-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 17px; }
+  .admin-summary .metric { min-height: 96px; }
   .new-key { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 13px; padding: 17px; background: #edf6f3; border: 1px solid #cce5df; }
   .new-key .field { margin: 0; }
   .reveal { margin-top: 17px; padding: 16px; background: var(--yellow-soft); border: 1px solid #efdca1; }
@@ -204,6 +219,8 @@
     .key-prefix, .key-date { grid-column: 1; }
     .key-action { grid-column: 2; grid-row: 1 / span 3; }
     .new-key { grid-template-columns: 1fr; }
+    .audit-toolbar { grid-template-columns: 1fr; }
+    .admin-summary { grid-template-columns: 1fr; }
     .test-layout { grid-template-columns: 1fr; }
     .test-question-grid { grid-template-columns: 1fr; }
     .result-summary, .example-list { grid-template-columns: 1fr; }
@@ -250,6 +267,8 @@
     <button class="nav-btn active" data-view="overview"><span>⌂</span><em>总览</em></button>
     <button class="nav-btn" data-view="test"><span>◇</span><em>模型测试</em></button>
     <button class="nav-btn" data-view="keys"><span>⌁</span><em>访问 Key</em></button>
+    <button class="nav-btn" data-view="calls"><span>▤</span><em>调用记录</em></button>
+    <button id="adminNav" class="nav-btn hidden" data-view="admin"><span>▦</span><em>管理中心</em></button>
     <button class="nav-btn" data-view="guide"><span>↗</span><em>MCP 接入</em></button>
     <div class="sidebar-foot">
       <div class="user-row"><div id="avatar" class="avatar">J</div><div><div id="userName" class="user-name"></div><div class="user-meta">个人工作区</div></div></div>
@@ -304,6 +323,45 @@
         <div class="panel panel-pad" style="margin-top:17px"><div class="panel-title"><h2>当前账户的 Key</h2><button class="icon-btn" id="refreshKeys" title="刷新列表">↻</button></div><div id="keyList" class="key-list"></div></div>
       </section>
 
+      <section id="view-calls" class="view">
+        <div class="view-head"><div><div class="eyebrow">Audit trail</div><h1>我的调用记录</h1><p>这里只显示当前账户发起的模型调用，包括 MCP Key 和控制台测试。</p></div><button class="icon-btn" id="refreshCalls" title="刷新记录">↻</button></div>
+        <div class="panel panel-pad">
+          <div class="audit-toolbar">
+            <div class="field"><label for="myCallKey">Key</label><select id="myCallKey"><option value="">全部 Key</option></select></div>
+            <div class="field"><label for="myCallSource">来源</label><select id="myCallSource"><option value="">全部来源</option><option value="mcp">MCP</option><option value="console">控制台</option></select></div>
+            <div class="field"><label for="myCallStatus">状态</label><select id="myCallStatus"><option value="">全部状态</option><option value="success">成功</option><option value="error">失败</option></select></div>
+            <button class="btn btn-primary" id="loadMyCalls" type="button">查询</button>
+          </div>
+          <div id="myCallMeta" class="helper"></div>
+          <div id="myCallList" class="audit-table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="view-admin" class="view">
+        <div class="view-head"><div><div class="eyebrow">Administration</div><h1>管理中心</h1><p>管理员可以查看注册用户，并按用户或任意 Key 检索全部调用记录。</p></div><button class="icon-btn" id="refreshAdmin" title="刷新管理数据">↻</button></div>
+        <div class="admin-summary">
+          <div class="panel metric"><div class="metric-label">注册用户</div><div id="adminUserCount" class="metric-value">0</div><div class="metric-sub">当前共享账户库</div></div>
+          <div class="panel metric"><div class="metric-label">全部 Key</div><div id="adminKeyCount" class="metric-value">0</div><div class="metric-sub">包含已吊销 Key</div></div>
+          <div class="panel metric"><div class="metric-label">调用总数</div><div id="adminCallCount" class="metric-value">0</div><div class="metric-sub">当前服务已记录</div></div>
+        </div>
+        <div class="panel panel-pad">
+          <div class="panel-title"><div><h2>已注册用户</h2><p style="margin-top:5px">账户、活跃 Key 和调用数量</p></div></div>
+          <div id="adminUserList" class="user-table-wrap"></div>
+        </div>
+        <div class="panel panel-pad" style="margin-top:17px">
+          <div class="panel-title"><div><h2>全部调用记录</h2><p style="margin-top:5px">支持按用户、Key、来源和状态筛选</p></div></div>
+          <div class="audit-toolbar">
+            <div class="field"><label for="adminCallUser">用户</label><select id="adminCallUser"><option value="">全部用户</option></select></div>
+            <div class="field"><label for="adminCallKey">Key</label><select id="adminCallKey"><option value="">全部 Key</option></select></div>
+            <div class="field"><label for="adminCallSource">来源</label><select id="adminCallSource"><option value="">全部来源</option><option value="mcp">MCP</option><option value="console">控制台</option></select></div>
+            <div class="field"><label for="adminCallStatus">状态</label><select id="adminCallStatus"><option value="">全部状态</option><option value="success">成功</option><option value="error">失败</option></select></div>
+            <button class="btn btn-primary" id="loadAdminCalls" type="button">查询</button>
+          </div>
+          <div id="adminCallMeta" class="helper"></div>
+          <div id="adminCallList" class="audit-table-wrap"></div>
+        </div>
+      </section>
+
       <section id="view-guide" class="view">
         <div class="view-head"><div><div class="eyebrow">Protocol</div><h1>MCP 接入</h1><p>使用标准 Streamable HTTP 连接 JEV，不需要额外 REST 适配层。</p></div><button class="btn btn-primary" data-go="keys">管理访问 Key</button></div>
         <div class="grid two">
@@ -319,10 +377,11 @@
 <div id="toast" class="toast hidden" style="position:fixed;right:24px;bottom:24px;padding:11px 14px;background:#153d3d;color:#fff"></div>
 
 <script>
-const state = { mode: 'login', user: null, keys: [], endpoint: `${window.location.origin}/mcp`, test: { inputType: 'text', file: null, objectUrl: null, supportedInputs: ['text'] } };
+const state = { mode: 'login', user: null, keys: [], admin: { users: [], keys: [] }, endpoint: `${window.location.origin}/mcp`, test: { inputType: 'text', file: null, objectUrl: null, supportedInputs: ['text'] } };
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 const dateText = (stamp) => stamp ? new Date(stamp * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '尚未使用';
+const dateTimeText = (stamp) => stamp ? new Date(stamp * 1000).toLocaleString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
 
 async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
@@ -352,9 +411,10 @@ function showToast(message) {
 function showApp(user) {
   state.user = user;
   $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden');
+  $('adminNav').classList.toggle('hidden', !user.is_admin);
   $('userName').textContent = user.username; $('avatar').textContent = user.username.slice(0, 1).toUpperCase();
   $('mcpEndpoint').textContent = state.endpoint; $('guideEndpoint').textContent = state.endpoint;
-  renderSnippets(); refreshDashboard();
+  renderSnippets(); refreshDashboard().then(() => { if (document.getElementById('view-calls').classList.contains('active')) loadMyCalls(); });
 }
 
 function showAuth() { $('authScreen').classList.remove('hidden'); $('appShell').classList.add('hidden'); }
@@ -383,7 +443,7 @@ async function refreshDashboard() {
     $('testCapability').textContent = `已实现：${state.test.supportedInputs.join(', ') || '无'}`;
     $('testReadyBadge').className = `badge${status.ready ? '' : ' warn'}`;
     $('testReadyBadge').innerHTML = status.ready ? `<span class="dot"></span> 已实现：${state.test.supportedInputs.join(', ') || '无'}` : '模型未就绪';
-    renderKeys();
+    renderKeys(); populateMyCallKeys();
   } catch (error) { if (error.status === 401) showAuth(); }
 }
 
@@ -394,6 +454,77 @@ function renderKeys() {
     if (!window.confirm('吊销后这个 Key 将立即无法调用 MCP，确定继续吗？')) return;
     try { await api(`/api/keys/${button.dataset.revoke}`, { method: 'DELETE' }); showToast('Key 已吊销'); await refreshDashboard(); } catch (error) { showToast(error.message); }
   }));
+}
+
+function fillSelect(id, items, emptyLabel, valueKey, labelFn) {
+  const select = $(id); if (!select) return;
+  const current = select.value;
+  select.innerHTML = `<option value="">${emptyLabel}</option>` + items.map((item) => `<option value="${escapeHtml(item[valueKey])}">${escapeHtml(labelFn(item))}</option>`).join('');
+  if ([...select.options].some((option) => option.value === current)) select.value = current;
+}
+
+function renderCallTable(targetId, records, includeUser) {
+  const target = $(targetId);
+  if (!records.length) { target.innerHTML = '<div class="empty">没有符合条件的调用记录。</div>'; return; }
+  const userHead = includeUser ? '<th>用户</th>' : '';
+  target.innerHTML = `<table class="audit-table"><thead><tr><th>时间</th>${userHead}<th>Key / 来源</th><th>输入</th><th>状态</th><th>耗时</th><th>错误摘要</th></tr></thead><tbody>${records.map((record) => {
+    const statusText = record.status === 'success' ? '成功' : '失败';
+    const userCell = includeUser ? `<td><strong>${escapeHtml(record.username || '已删除用户')}</strong><span class="secondary">ID ${record.user_id ?? '—'}</span></td>` : '';
+    const keyText = record.key_name ? `${escapeHtml(record.key_name)}<span class="secondary">${escapeHtml(record.key_prefix || '')}</span>` : '<span class="secondary">控制台测试</span>';
+    return `<tr><td class="mono">${dateTimeText(record.started_at)}</td>${userCell}<td>${keyText}<span class="secondary">${escapeHtml(record.source || '—')} · ${escapeHtml(record.tool_name || '—')}</span></td><td>${escapeHtml(record.input_type || '—')}</td><td><span class="status-pill${record.status === 'success' ? '' : ' error'}">${statusText} · ${record.status_code ?? '—'}</span></td><td class="mono">${Number(record.duration_ms || 0)} ms</td><td class="error-text">${escapeHtml(record.error_message || '—')}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+function populateMyCallKeys() {
+  fillSelect('myCallKey', state.keys, '全部 Key', 'id', (key) => `${key.name} · ${key.prefix}`);
+}
+
+async function loadMyCalls() {
+  const query = new URLSearchParams();
+  if ($('myCallKey').value) query.set('key_id', $('myCallKey').value);
+  if ($('myCallSource').value) query.set('source', $('myCallSource').value);
+  if ($('myCallStatus').value) query.set('status', $('myCallStatus').value);
+  try {
+    const data = await api(`/api/calls?${query}`);
+    $('myCallMeta').textContent = `共 ${data.total} 条记录`;
+    renderCallTable('myCallList', data.records || [], false);
+  } catch (error) { if (error.status === 401) showAuth(); else showToast(error.message); }
+}
+
+function populateAdminSelectors() {
+  fillSelect('adminCallUser', state.admin.users, '全部用户', 'id', (user) => `${user.username} · ${user.call_count} 次调用`);
+  const selectedUser = $('adminCallUser').value;
+  const keys = selectedUser ? state.admin.keys.filter((key) => String(key.user_id) === String(selectedUser)) : state.admin.keys;
+  fillSelect('adminCallKey', keys, '全部 Key', 'id', (key) => `${key.username} / ${key.name} · ${key.prefix}`);
+}
+
+function renderAdminUsers() {
+  if (!state.admin.users.length) { $('adminUserList').innerHTML = '<div class="empty">当前没有注册用户。</div>'; return; }
+  $('adminUserList').innerHTML = `<table class="audit-table user-table"><thead><tr><th>用户</th><th>角色</th><th>注册时间</th><th>最后登录</th><th>活跃 Key</th><th>调用次数</th></tr></thead><tbody>${state.admin.users.map((user) => `<tr><td><strong>${escapeHtml(user.username)}</strong><span class="secondary">ID ${user.id}</span></td><td>${user.is_admin || user.role === 'admin' ? '管理员' : '普通用户'}</td><td>${dateTimeText(user.created_at)}</td><td>${dateTimeText(user.last_login_at)}</td><td>${user.active_key_count}</td><td>${user.call_count}</td></tr>`).join('')}</tbody></table>`;
+}
+
+async function loadAdminCalls() {
+  const query = new URLSearchParams();
+  if ($('adminCallUser').value) query.set('user_id', $('adminCallUser').value);
+  if ($('adminCallKey').value) query.set('key_id', $('adminCallKey').value);
+  if ($('adminCallSource').value) query.set('source', $('adminCallSource').value);
+  if ($('adminCallStatus').value) query.set('status', $('adminCallStatus').value);
+  try {
+    const data = await api(`/api/admin/calls?${query}`);
+    $('adminCallMeta').textContent = `共 ${data.total} 条记录`;
+    renderCallTable('adminCallList', data.records || [], true);
+  } catch (error) { if (error.status === 401) showAuth(); else showToast(error.message); }
+}
+
+async function loadAdminData() {
+  try {
+    const data = await api('/api/admin/users');
+    state.admin.users = data.users || []; state.admin.keys = data.keys || [];
+    $('adminUserCount').textContent = state.admin.users.length;
+    $('adminKeyCount').textContent = state.admin.keys.length;
+    $('adminCallCount').textContent = state.admin.users.reduce((sum, user) => sum + Number(user.call_count || 0), 0);
+    renderAdminUsers(); populateAdminSelectors(); await loadAdminCalls();
+  } catch (error) { if (error.status === 401) showAuth(); else showToast(error.message); }
 }
 
 const inputAccept = { image: 'image/*', audio: 'audio/*', video: 'video/*' };
@@ -489,8 +620,10 @@ function fillExample(name) {
 function openView(view) {
   document.querySelectorAll('.view').forEach((item) => item.classList.toggle('active', item.id === `view-${view}`));
   document.querySelectorAll('.nav-btn').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
-  $('crumbName').textContent = ({ overview: '总览', test: '模型测试', keys: '访问 Key', guide: 'MCP 接入' })[view];
+  $('crumbName').textContent = ({ overview: '总览', test: '模型测试', keys: '访问 Key', calls: '调用记录', admin: '管理中心', guide: 'MCP 接入' })[view];
   if (view === 'keys') refreshDashboard();
+  if (view === 'calls') { refreshDashboard().then(loadMyCalls); }
+  if (view === 'admin') loadAdminData();
 }
 
 document.querySelectorAll('[data-auth-mode]').forEach((button) => button.addEventListener('click', () => setAuthMode(button.dataset.authMode)));
@@ -527,6 +660,17 @@ $('testQuestionType').addEventListener('change', setOptionsVisibility);
 $('testSubmit').addEventListener('click', submitTest);
 document.querySelectorAll('[data-example]').forEach((item) => item.addEventListener('click', () => fillExample(item.dataset.example)));
 $('refreshKeys').addEventListener('click', refreshDashboard);
+$('refreshCalls').addEventListener('click', loadMyCalls);
+$('loadMyCalls').addEventListener('click', loadMyCalls);
+$('myCallKey').addEventListener('change', loadMyCalls);
+$('myCallSource').addEventListener('change', loadMyCalls);
+$('myCallStatus').addEventListener('change', loadMyCalls);
+$('refreshAdmin').addEventListener('click', loadAdminData);
+$('loadAdminCalls').addEventListener('click', loadAdminCalls);
+$('adminCallUser').addEventListener('change', () => { populateAdminSelectors(); loadAdminCalls(); });
+$('adminCallKey').addEventListener('change', loadAdminCalls);
+$('adminCallSource').addEventListener('change', loadAdminCalls);
+$('adminCallStatus').addEventListener('change', loadAdminCalls);
 $('logoutBtn').addEventListener('click', async () => { await api('/api/auth/logout', { method: 'POST' }); showAuth(); });
 
 (async function boot() {
