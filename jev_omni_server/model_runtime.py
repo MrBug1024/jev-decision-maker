@@ -58,10 +58,16 @@ class ModelRuntime:
         )
         if not devices:
             devices = [str(model.device)]
+        quantization = manifest.get("quantization", {})
+        bits = int(quantization.get("bits", 0) or 0)
         self.model = model
         self._status = {
             "ready": True,
-            "strategy": f"{self.settings.device_map}_quantized",
+            "strategy": (
+                f"{self.settings.device_map}_quantized"
+                if bits
+                else f"{self.settings.device_map}_full_precision"
+            ),
             "device": str(model.device),
             "devices": devices,
             "dtype": str(model.compute_dtype).replace("torch.", ""),
@@ -69,7 +75,7 @@ class ModelRuntime:
             "model_kind": "jev_omni",
             "configured_inputs": list(self.settings.model_inputs),
             "supported_inputs": list(self.supported_inputs),
-            "quantization": manifest.get("quantization", {}),
+            "quantization": quantization,
             "model_path": str(self.settings.model_path),
             "error": None,
         }

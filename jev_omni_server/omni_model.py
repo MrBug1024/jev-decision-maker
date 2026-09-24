@@ -280,12 +280,103 @@ class LocalJevOmni:
                 )
 
     @classmethod
+    def _from_unified(cls, root: Path, settings=None) -> "LocalJevOmni":
+        """Load the official merged BF16 checkpoint shipped in ``unified/``."""
+        import torch
+        import transformers
+        from transformers import AutoConfig
+
+        root = root.resolve()
+        unified_path = root / "unified"
+        if settings is None:
+            class Defaults:
+                device_map = "auto"
+                gpu_memory_reserve_gib = 2.0
+                cpu_memory_limit_gib = None
+                offload_dir = root / "offload"
+                model_dtype = "bf16"
+                trust_remote_code = True
+                quantization = "bf16"
+
+            settings = Defaults()
+        requested = str(getattr(settings, "quantization", "bf16")).lower()
+        if requested in {"4", "4bit", "int4", "8", "8bit", "int8"}:
+            raise ValueError(
+                "The official unified Jev-Omni checkpoint is full precision. "
+                "Set JEV_OMNI_QUANTIZATION=bf16 when using a raw model directory."
+            )
+        if not torch.cuda.is_available():
+            raise RuntimeError("Jev-Omni requires a CUDA GPU")
+
+        dtype_name = getattr(settings, "model_dtype", "bf16")
+        if dtype_name == "auto":
+            dtype_name = "bf16"
+        compute_dtype = _dtype(dtype_name)
+        print(
+            f"Jev-Omni runtime dtype: {dtype_name} (official unified checkpoint) ...",
+            flush=True,
+        )
+        _configure_cuda_for_reference_inference()
+        settings.offload_dir.mkdir(parents=True, exist_ok=True)
+        placement = _placement(settings, _max_memory(settings))
+
+        if not (unified_path / "config.json").exists():
+            raise FileNotFoundError(f"Missing official unified model: {unified_path}")
+        config = AutoConfig.from_pretrained(
+            unified_path,
+            trust_remote_code=settings.trust_remote_code,
+        )
+        architectures = getattr(config, "architectures", None) or []
+        if not architectures:
+            raise RuntimeError("The official unified model does not declare an architecture")
+        model_cls = getattr(transformers, architectures[0], None)
+        if model_cls is None:
+            raise RuntimeError(f"Transformers has no architecture {architectures[0]!r}")
+
+        print("Loading official unified Jev-Omni BF16 model ...", flush=True)
+        model = _load_transformer(
+            model_cls,
+            unified_path,
+            quantization_bits=None,
+            compute_dtype=compute_dtype,
+            placement=placement,
+        )
+        input_device = _input_device(model)
+        decision_config = json.loads((root / "decision_config.json").read_text(encoding="utf-8"))
+        head = Head256(decision_config["hidden_size"])
+        head.load_state_dict(torch.load(root / "head.pt", map_location="cpu", weights_only=True))
+        output_device = _mapped_device(model, last=True) or input_device
+        head.to(output_device).eval()
+        _, decoder = _find_backbone(model)
+        processor = _load_processor(
+            unified_path,
+            trust_remote_code=settings.trust_remote_code,
+        )
+        model.eval()
+        manifest = {
+            "schema_version": 1,
+            "model": "akhilaaa3/Jev-Omni",
+            "source_model": "official-unified",
+            "base_model": "google/gemma-4-12B-it",
+            "quantization": {
+                "bits": 0,
+                "method": "none",
+                "type": "bf16",
+                "compute_dtype": dtype_name,
+                "base_model": "none",
+            },
+        }
+        return cls(model, head, processor, decoder, input_device, compute_dtype, manifest)
+
+    @classmethod
     def from_bundle(cls, root: Path, settings=None) -> "LocalJevOmni":
         import torch
         import transformers
         from transformers import AutoConfig
 
         root = root.resolve()
+        if not (root / "manifest.json").exists() and (root / "unified" / "config.json").exists():
+            return cls._from_unified(root, settings)
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         quant = manifest.get("quantization", {})
         bits = int(quant.get("bits", 0))

@@ -101,7 +101,7 @@ class Settings:
 
     @property
     def model_path(self) -> Path:
-        return _path(self.model_id, self.base_dir / ".." / "models" / "jev-omni-int8").resolve()
+        return _path(self.model_id, self.base_dir / ".." / "models" / "raw" / "jev-omni").resolve()
 
     @property
     def mcp_resource_url(self) -> str:
@@ -112,8 +112,13 @@ def load_settings() -> Settings:
     port = _int("JEV_OMNI_PORT", 8020)
     public_base_url = _env("JEV_OMNI_PUBLIC_URL", f"http://127.0.0.1:{port}").rstrip("/")
     inputs = _csv(_env("JEV_OMNI_MODEL_INPUTS"), ("text", "image", "audio", "video"))
-    quantization = (_env("JEV_OMNI_QUANTIZATION", "auto") or "auto").lower()
-    default_model = "../models/jev-omni-int4" if quantization in {"4", "4bit", "int4"} else "../models/jev-omni-int8"
+    quantization = (_env("JEV_OMNI_QUANTIZATION", "bf16") or "bf16").lower()
+    if quantization in {"4", "4bit", "int4"}:
+        default_model = "../models/jev-omni-int4"
+    elif quantization in {"8", "8bit", "int8"}:
+        default_model = "../models/jev-omni-int8"
+    else:
+        default_model = "../models/raw/jev-omni"
     invalid = set(inputs) - {"text", "image", "audio", "video"}
     if invalid:
         raise ValueError("JEV_OMNI_MODEL_INPUTS contains unsupported values: " + ", ".join(sorted(invalid)))
@@ -122,7 +127,7 @@ def load_settings() -> Settings:
         index_html=BASE_DIR / "index.html",
         database_path=_path(_env("JEV_OMNI_DB_PATH"), BASE_DIR.parent / "data" / "jev_gateway.db"),
         model_id=_env("JEV_OMNI_MODEL_PATH", default_model) or default_model,
-        model_name=_env("JEV_OMNI_MODEL_NAME", "jev-omni-int8") or "jev-omni-int8",
+        model_name=_env("JEV_OMNI_MODEL_NAME", "jev-omni-bf16") or "jev-omni-bf16",
         model_kind="jev_omni",
         model_inputs=inputs,
         model_revision=_env("JEV_OMNI_MODEL_REVISION"),
