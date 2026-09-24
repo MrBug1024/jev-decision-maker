@@ -2,7 +2,7 @@
 
 This directory creates complete, reusable Jev-Omni bundles. The source model and Gemma base model are copied into the output, while the decoder backbone and optionally the base model are saved with bitsandbytes INT8 or NF4 INT4 weights.
 
-Run this on the Linux CUDA host that will perform the conversion. The output directory must be new; the command never overwrites an existing artifact.
+Run this on the Linux CUDA host that will perform the conversion. Relative model and output paths are resolved from the project root, so the commands work both from the repository root and from inside `quantify/`. The output directory must be new; the command never overwrites an existing artifact.
 
 ```bash
 python -m pip install -r quantify/requirements.txt

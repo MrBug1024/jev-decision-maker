@@ -4,3 +4,8 @@ gunicorn --workers 3 --bind 0.0.0.0:8019 --daemon  --pid /home/ymtao/work/jev-de
 
 # 停止服务
 - 同样，你应该根据自己已经启动的服务，选择要杀的服务，修改 APP_MARK="open_jev_server.server:app" 指向你的服务
+
+# 环境
+- conda activate jev-quantify
+- conda activate omin-decision-maker
+- conda activate open-decision-maker

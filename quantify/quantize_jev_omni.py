@@ -14,6 +14,23 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def resolve_project_path(value: str | None, *, for_output: bool = False) -> str | None:
+    if value is None:
+        return None
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return str(path)
+    current = (Path.cwd() / path).resolve()
+    project = (PROJECT_ROOT / path).resolve()
+    if current.exists():
+        return str(current)
+    if project.exists() or for_output:
+        return str(project)
+    return str(current)
+
 
 def parse_max_memory(values: list[str]) -> dict[int | str, str]:
     result: dict[int | str, str] = {}
@@ -28,9 +45,23 @@ def parse_max_memory(values: list[str]) -> dict[int | str, str]:
 
 
 def resolve_snapshot(source: str, cache_dir: str | None, revision: str | None) -> tuple[Path, str]:
-    local = Path(source).expanduser()
+    local_value = resolve_project_path(source)
+    local = Path(local_value or source)
     if local.is_dir():
         return local.resolve(), source
+
+    raw = Path(source).expanduser()
+    looks_like_local_path = (
+        raw.is_absolute()
+        or source.startswith((".", "~", "/", "\\"))
+        or len(raw.parts) > 2
+        or source.startswith(("models/", "models\\"))
+    )
+    if looks_like_local_path:
+        raise FileNotFoundError(
+            f"Local model directory does not exist: {source!r}. "
+            f"Checked {local} and the current working directory {Path.cwd()}."
+        )
 
     from huggingface_hub import snapshot_download
 
@@ -227,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.compute_dtype == "bf16" and not torch.cuda.is_bf16_supported():
         parser.error("BF16 is not supported by the visible CUDA device; use --compute-dtype fp16")
 
-    output = Path(args.output).expanduser().resolve()
+    output = Path(resolve_project_path(args.output, for_output=True) or args.output).resolve()
     if output.exists():
         parser.error(f"Output already exists; choose a new path: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -235,8 +266,12 @@ def main(argv: list[str] | None = None) -> int:
     max_memory.setdefault("cpu", "64GiB")
     compute_dtype = torch.bfloat16 if args.compute_dtype == "bf16" else torch.float16
 
-    source, source_id = resolve_snapshot(args.source, args.cache_dir, args.revision)
-    base, base_id = resolve_snapshot(args.base_model, args.cache_dir, args.base_revision)
+    cache_dir = resolve_project_path(args.cache_dir)
+    try:
+        source, source_id = resolve_snapshot(args.source, cache_dir, args.revision)
+        base, base_id = resolve_snapshot(args.base_model, cache_dir, args.base_revision)
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
     required = (source / "decision_config.json", source / "head.pt", source / "runtime_buffers.pt")
     missing = [str(path) for path in required if not path.exists()]
     if missing:
