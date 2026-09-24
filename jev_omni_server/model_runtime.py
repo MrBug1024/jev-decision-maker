@@ -57,7 +57,7 @@ class ModelRuntime:
             "strategy": f"{self.settings.device_map}_quantized",
             "device": str(model.device),
             "devices": devices,
-            "dtype": manifest.get("quantization", {}).get("compute_dtype"),
+            "dtype": str(model.compute_dtype).replace("torch.", ""),
             "head_device": str(next(model.head.parameters()).device),
             "model_kind": "jev_omni",
             "configured_inputs": list(self.settings.model_inputs),

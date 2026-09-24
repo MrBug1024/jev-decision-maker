@@ -267,7 +267,10 @@ class LocalJevOmni:
             settings = Defaults()
         dtype_name = settings.model_dtype
         if dtype_name == "auto":
-            dtype_name = quant.get("compute_dtype", "bf16")
+            # bitsandbytes INT8 kernels consume FP16 inputs. Keeping the
+            # bundle's BF16 export dtype here would trigger a BF16->FP16 cast
+            # warning on every MatMul8bitLt call.
+            dtype_name = "fp16" if bits == 8 else quant.get("compute_dtype", "bf16")
         compute_dtype = _dtype(dtype_name)
         settings.offload_dir.mkdir(parents=True, exist_ok=True)
         max_memory = _max_memory(settings)

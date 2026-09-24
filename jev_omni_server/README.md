@@ -15,10 +15,11 @@ Set `JEV_OMNI_QUANTIZATION=4bit` to make the default model path `../models/jev-o
 
 The service uses port `8020` by default and exposes the same console, SQLite account/key management, MCP endpoint, and `jev_decide` tool shape as the original service. It accepts text, image, audio, and video input in the browser test console. Audio conversion requires `ffmpeg` on `PATH`; video decoding uses OpenCV.
 
+For INT8 bundles, `JEV_OMNI_MODEL_DTYPE=auto` selects FP16 at runtime because bitsandbytes INT8 kernels consume FP16 inputs. This avoids repeated BF16-to-FP16 conversion warnings. Set `JEV_OMNI_MODEL_DTYPE=bf16` only when that conversion is intentional.
+
 The server never quantizes or downloads a model at startup. `JEV_OMNI_MODEL_PATH` must point to a complete bundle containing `manifest.json`, `base_model/`, `backbone/`, `head.pt`, and `runtime_buffers.pt`.
 
 For a CPU-free production process, use one Uvicorn worker. The quantized bundle still requires a compatible Linux CUDA, PyTorch, Transformers, and bitsandbytes environment.
 
 SQLite sharing is intended for two services on the same machine. Do not place the SQLite file on NFS or use it as a cross-machine database; use PostgreSQL or another server database when the services run on different hosts.
-
 
