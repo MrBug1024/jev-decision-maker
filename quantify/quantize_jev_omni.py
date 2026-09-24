@@ -248,6 +248,53 @@ def copy_base_bundle(source: Path, destination: Path) -> None:
     )
 
 
+def _state_dict_from_offload_maps(model, state_dict):
+    """Resolve meta entries from Accelerate without moving bnb modules."""
+    import torch
+
+    hooked_modules = []
+    for module_name, module in model.named_modules():
+        hook = getattr(module, "_hf_hook", None)
+        weights_map = getattr(hook, "weights_map", None) if hook is not None else None
+        if weights_map is not None:
+            hooked_modules.append((module_name, weights_map))
+    hooked_modules.sort(key=lambda item: len(item[0]), reverse=True)
+
+    resolved = dict(state_dict)
+    unresolved: list[str] = []
+    for name, value in state_dict.items():
+        if not (isinstance(value, torch.Tensor) and value.device.type == "meta"):
+            continue
+        found = None
+        for module_name, weights_map in hooked_modules:
+            prefix = f"{module_name}." if module_name else ""
+            if not name.startswith(prefix):
+                continue
+            local_name = name[len(prefix) :]
+            for lookup in (local_name, name):
+                try:
+                    candidate = weights_map[lookup]
+                except (KeyError, IndexError, TypeError):
+                    continue
+                if candidate is not None:
+                    found = candidate
+                    break
+            if found is not None:
+                break
+        if found is None:
+            unresolved.append(name)
+        else:
+            resolved[name] = found
+
+    if unresolved:
+        preview = ", ".join(unresolved[:3])
+        raise RuntimeError(
+            "Could not resolve CPU-offloaded model weights without moving them "
+            f"back to CUDA (first missing entries: {preview})."
+        )
+    return resolved
+
+
 def _state_dict_for_saving(model):
     import torch
 
@@ -256,32 +303,10 @@ def _state_dict_for_saving(model):
         isinstance(value, torch.Tensor) and value.device.type == "meta"
         for value in state_dict.values()
     ):
-        offload_state_dict = None
-        for function_name in (
-            "get_state_dict_from_offloaded_model",
-            "get_state_dict_offloaded_model",
-        ):
-            try:
-                modeling = importlib.import_module("accelerate.utils.modeling")
-                offload_state_dict = getattr(modeling, function_name)
-                break
-            except (AttributeError, ImportError):
-                continue
-        if offload_state_dict is None:
-            raise RuntimeError(
-                "The quantized model contains meta tensors after CPU offload, "
-                "but this Accelerate version cannot materialize its state_dict. "
-                "Install a recent accelerate package and rerun the quantization."
-            )
-        offloaded = offload_state_dict(model)
-        # Some Accelerate releases return only named parameters here. Preserve
-        # non-meta auxiliary entries such as bitsandbytes' SCB tensors too.
-        for name, value in state_dict.items():
-            if name not in offloaded and not (
-                isinstance(value, torch.Tensor) and value.device.type == "meta"
-            ):
-                offloaded[name] = value
-        state_dict = offloaded
+        # The official Accelerate helper temporarily moves every offloaded
+        # module to CPU. That is unsafe for bitsandbytes Int8Params: its .to()
+        # path can allocate on the nearly-full CUDA device again.
+        state_dict = _state_dict_from_offload_maps(model, state_dict)
 
     materialized = {}
     for name, value in state_dict.items():
