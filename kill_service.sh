@@ -58,6 +58,7 @@ service_name_for_pid() {
 
         # Direct execution from the service directory, for example:
         #   python server.py
+        #   gunicorn ... server:app
         if [[ "$cwd" == "$service" ]] && {
             [[ "$cmd" == *"server.py"* ]] ||
             [[ "$cmd" == *"server:app"* ]] ||
