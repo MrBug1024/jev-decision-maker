@@ -21,7 +21,7 @@ For reliable image/audio/video decisions, the bundle must have `quantization.bas
 
 On startup, the service migrates the shared SQLite database by adding the user `role` column and the `api_call_logs` audit table. The existing account named `admin` is promoted to the administrator role automatically. Administrators can view all registered users and filter all Jev-Omni calls by user, Key, source, and status; regular users can only view their own calls. Audit records contain metadata only: no password, full API Key, prompt, or uploaded media is stored.
 
-For INT8 bundles, `JEV_OMNI_MODEL_DTYPE=auto` selects FP16 at runtime because bitsandbytes INT8 kernels consume FP16 inputs. This avoids repeated BF16-to-FP16 conversion warnings. Set `JEV_OMNI_MODEL_DTYPE=bf16` only when that conversion is intentional.
+For a recommended `base_model: none` bundle, `JEV_OMNI_MODEL_DTYPE=auto` selects BF16 to match the official Gemma 4 multimodal path. bitsandbytes INT8 layers may log BF16-to-FP16 cast warnings; those warnings are expected. Set `JEV_OMNI_MODEL_DTYPE=bf16` explicitly if you want to pin the stable multimodal dtype. The old `base_model: same` low-memory artifact keeps the FP16 fallback, but is not recommended for multimodal accuracy.
 
 The server never quantizes or downloads a model at startup. `JEV_OMNI_MODEL_PATH` must point to a complete bundle containing `manifest.json`, `base_model/`, `backbone/`, `head.pt`, and `runtime_buffers.pt`.
 

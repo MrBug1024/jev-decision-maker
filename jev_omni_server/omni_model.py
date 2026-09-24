@@ -310,11 +310,23 @@ class LocalJevOmni:
             settings = Defaults()
         dtype_name = settings.model_dtype
         if dtype_name == "auto":
-            # bitsandbytes INT8 kernels consume FP16 inputs. Keeping the
-            # bundle's BF16 export dtype here would trigger a BF16->FP16 cast
-            # warning on every MatMul8bitLt call.
-            dtype_name = "fp16" if bits == 8 else quant.get("compute_dtype", "bf16")
+            # The official Gemma 4 multimodal path runs in BF16. INT8
+            # bitsandbytes layers may emit a BF16->FP16 cast warning, but
+            # forcing the whole model to FP16 can produce non-finite values
+            # in the 12B vision/text path. Keep FP16 only for the artifact
+            # whose multimodal base was itself quantized.
+            base_is_quantized = quant.get("base_model", "same") == "same"
+            dtype_name = (
+                "fp16"
+                if bits == 8 and base_is_quantized
+                else quant.get("compute_dtype", "bf16")
+            )
         compute_dtype = _dtype(dtype_name)
+        print(
+            f"Jev-Omni runtime dtype: {dtype_name} "
+            f"(base quantization: {quant.get('base_model', 'same')}) ...",
+            flush=True,
+        )
         _configure_cuda_for_reference_inference()
         settings.offload_dir.mkdir(parents=True, exist_ok=True)
         max_memory = _max_memory(settings)
@@ -476,12 +488,25 @@ class LocalJevOmni:
             hidden = self._capture.get("hidden")
             if hidden is None:
                 raise RuntimeError("Jev-Omni decoder did not expose a final hidden state")
+            if not torch.isfinite(hidden).all():
+                raise RuntimeError(
+                    "Jev-Omni produced non-finite hidden states. "
+                    "Use JEV_OMNI_MODEL_DTYPE=bf16 for the multimodal base."
+                )
             head_device = next(self.head.parameters()).device
             logits = self.head(
                 hidden.to(head_device),
                 torch.tensor([len(options)], device=head_device),
             )
-            values = logits.softmax(-1)[0, : len(options)].float().cpu().tolist()
+            if not torch.isfinite(logits).all():
+                raise RuntimeError(
+                    "Jev-Omni decision head produced non-finite logits. "
+                    "Use JEV_OMNI_MODEL_DTYPE=bf16 and verify the bundle."
+                )
+            values_tensor = torch.softmax(logits[0, : len(options)].float(), dim=-1)
+            if not torch.isfinite(values_tensor).all():
+                raise RuntimeError("Jev-Omni produced non-finite probabilities")
+            values = values_tensor.cpu().tolist()
         best = max(range(len(values)), key=values.__getitem__)
         return {
             "prediction": options[best],
