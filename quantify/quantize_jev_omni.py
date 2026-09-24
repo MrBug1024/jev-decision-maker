@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_SOURCE_REPO = "akhilaaa3/Jev-Omni"
+DEFAULT_BASE_REPO = "google/gemma-4-12B-it"
 
 
 def resolve_project_path(value: str | None, *, for_output: bool = False) -> str | None:
@@ -27,7 +29,14 @@ def resolve_project_path(value: str | None, *, for_output: bool = False) -> str 
     project = (PROJECT_ROOT / path).resolve()
     if current.exists():
         return str(current)
-    if project.exists() or for_output:
+    project_relative = path.parts and path.parts[0].lower() in {
+        "models",
+        "data",
+        "quantify",
+        "jev_omni_server",
+        "open_jev_server",
+    }
+    if project.exists() or for_output or project_relative:
         return str(project)
     return str(current)
 
@@ -44,24 +53,81 @@ def parse_max_memory(values: list[str]) -> dict[int | str, str]:
     return result
 
 
-def resolve_snapshot(source: str, cache_dir: str | None, revision: str | None) -> tuple[Path, str]:
-    local_value = resolve_project_path(source)
-    local = Path(local_value or source)
-    if local.is_dir():
-        return local.resolve(), source
-
+def _looks_like_local_path(source: str) -> bool:
     raw = Path(source).expanduser()
-    looks_like_local_path = (
+    return (
         raw.is_absolute()
         or source.startswith((".", "~", "/", "\\"))
         or len(raw.parts) > 2
         or source.startswith(("models/", "models\\"))
     )
-    if looks_like_local_path:
-        raise FileNotFoundError(
-            f"Local model directory does not exist: {source!r}. "
-            f"Checked {local} and the current working directory {Path.cwd()}."
+
+
+def _has_weight_file(root: Path) -> bool:
+    weight_suffixes = {".safetensors", ".bin", ".pt", ".pth", ".ckpt"}
+    return any(path.is_file() and path.suffix in weight_suffixes for path in root.rglob("*"))
+
+
+def resolve_snapshot(
+    source: str,
+    cache_dir: str | None,
+    revision: str | None,
+    *,
+    download_repo: str | None = None,
+    label: str,
+    required_files: tuple[str, ...] = (),
+    require_weights: bool = False,
+) -> tuple[Path, str]:
+    local_value = resolve_project_path(source)
+    local = Path(local_value or source)
+    if local.is_dir():
+        complete = all((local / item).exists() for item in required_files)
+        if require_weights:
+            complete = complete and _has_weight_file(local)
+        if complete:
+            return local.resolve(), source
+        if download_repo is None:
+            return local.resolve(), source
+        print(
+            f"Resuming incomplete {label} model download in {local} ...",
+            flush=True,
         )
+
+    if _looks_like_local_path(source):
+        if download_repo is None:
+            raise FileNotFoundError(
+                f"Local {label} directory does not exist: {source!r}. "
+                f"Checked {local} and the current working directory {Path.cwd()}."
+            )
+
+        if local.exists() and not local.is_dir():
+            raise FileNotFoundError(
+                f"Local {label} path is not a directory: {local}"
+            )
+
+        local.parent.mkdir(parents=True, exist_ok=True)
+        print(
+            f"Downloading {label} model {download_repo} to {local} ...",
+            flush=True,
+        )
+        from huggingface_hub import snapshot_download
+
+        kwargs: dict[str, Any] = {
+            "repo_id": download_repo,
+            "local_dir": str(local),
+        }
+        if cache_dir:
+            kwargs["cache_dir"] = cache_dir
+        if revision:
+            kwargs["revision"] = revision
+        try:
+            snapshot_download(**kwargs)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to download {label} model {download_repo!r} to {local}. "
+                "Check network access, Hugging Face authentication, and disk space."
+            ) from exc
+        return local.resolve(), download_repo
 
     from huggingface_hub import snapshot_download
 
@@ -89,8 +155,14 @@ def build_quantization_config(bits: int, compute_dtype):
     )
 
 
-def import_model_class(config: dict[str, Any]):
-    module = importlib.import_module(config["backbone_module"])
+def import_model_class(config: dict[str, Any], module_root: Path | None = None):
+    module_name = config["backbone_module"]
+    module_file = None
+    if module_root is not None:
+        module_file = module_root / (module_name.replace(".", "/") + ".py")
+    if module_file is not None and module_file.exists():
+        sys.path.insert(0, str(module_root))
+    module = importlib.import_module(module_name)
     return getattr(module, config["backbone_class"])
 
 
@@ -105,7 +177,7 @@ def load_model(
     import torch
 
     config = json.loads((source / "decision_config.json").read_text(encoding="utf-8"))
-    cls = import_model_class(config)
+    cls = import_model_class(config, source)
     kwargs: dict[str, Any] = {
         "dtype": compute_dtype,
         "attn_implementation": "sdpa",
@@ -238,8 +310,16 @@ def write_manifest(root: Path, args: argparse.Namespace, source_id: str, base_id
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", default="akhilaaa3/Jev-Omni", help="Local snapshot or Hugging Face ID")
-    parser.add_argument("--base-model", default="google/gemma-4-12B-it")
+    parser.add_argument(
+        "--source",
+        default=DEFAULT_SOURCE_REPO,
+        help="Local snapshot or Hugging Face ID; a missing models/raw/jev-omni path is downloaded automatically",
+    )
+    parser.add_argument(
+        "--base-model",
+        default=DEFAULT_BASE_REPO,
+        help="Local Gemma snapshot or Hugging Face ID; a missing models/raw/gemma-4-12B-it path is downloaded automatically",
+    )
     parser.add_argument("--output", required=True, help="New output directory; it must not already exist")
     parser.add_argument("--bits", type=int, choices=(4, 8), required=True)
     parser.add_argument("--base-quantization", choices=("same", "none"), default="same")
@@ -268,14 +348,44 @@ def main(argv: list[str] | None = None) -> int:
 
     cache_dir = resolve_project_path(args.cache_dir)
     try:
-        source, source_id = resolve_snapshot(args.source, cache_dir, args.revision)
-        base, base_id = resolve_snapshot(args.base_model, cache_dir, args.base_revision)
-    except FileNotFoundError as exc:
+        source, source_id = resolve_snapshot(
+            args.source,
+            cache_dir,
+            args.revision,
+            download_repo=DEFAULT_SOURCE_REPO,
+            label="Jev-Omni source",
+            required_files=(
+                "decision_config.json",
+                "head.pt",
+                "runtime_buffers.pt",
+                "backbone/config.json",
+            ),
+        )
+        base, base_id = resolve_snapshot(
+            args.base_model,
+            cache_dir,
+            args.base_revision,
+            download_repo=DEFAULT_BASE_REPO,
+            label="Gemma base",
+            required_files=("config.json",),
+            require_weights=True,
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
         parser.error(str(exc))
-    required = (source / "decision_config.json", source / "head.pt", source / "runtime_buffers.pt")
+    required = (
+        source / "decision_config.json",
+        source / "head.pt",
+        source / "runtime_buffers.pt",
+        source / "backbone" / "config.json",
+    )
     missing = [str(path) for path in required if not path.exists()]
     if missing:
         parser.error("Jev-Omni source is missing: " + ", ".join(missing))
+    if not _has_weight_file(base):
+        parser.error(
+            "Gemma base model is missing weight files under "
+            f"{base}; rerun the command to resume its download"
+        )
 
     temp = Path(tempfile.mkdtemp(prefix=f"{output.name}.", dir=output.parent))
     try:

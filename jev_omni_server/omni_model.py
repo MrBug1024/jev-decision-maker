@@ -7,6 +7,7 @@ import importlib.util
 import inspect
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,15 @@ def _load_transformer(cls, path: Path, *, quantization_bits, compute_dtype, plac
     return cls.from_pretrained(path, **kwargs).eval()
 
 
+def _import_bundle_class(config: dict[str, Any], root: Path):
+    module_name = config["backbone_module"]
+    module_file = root / (module_name.replace(".", "/") + ".py")
+    if module_file.exists():
+        sys.path.insert(0, str(root))
+    module = importlib.import_module(module_name)
+    return getattr(module, config["backbone_class"])
+
+
 def _find_backbone(model):
     for path in ("model.language_model", "language_model.model", "model.text_model", "model"):
         node = model
@@ -260,8 +270,7 @@ class LocalJevOmni:
         input_device = _input_device(base)
 
         decision_config = json.loads((root / "decision_config.json").read_text(encoding="utf-8"))
-        decoder_module = importlib.import_module(decision_config["backbone_module"])
-        decoder_cls = getattr(decoder_module, decision_config["backbone_class"])
+        decoder_cls = _import_bundle_class(decision_config, root)
         print("Loading bundled quantized Jev-Omni decoder ...", flush=True)
         decoder = _load_transformer(
             decoder_cls,

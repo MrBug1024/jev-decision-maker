@@ -4,23 +4,31 @@ This directory creates complete, reusable Jev-Omni bundles. The source model and
 
 Run this on the Linux CUDA host that will perform the conversion. Relative model and output paths are resolved from the project root, so the commands work both from the repository root and from inside `quantify/`. The output directory must be new; the command never overwrites an existing artifact.
 
+If `models/raw/jev-omni` or `models/raw/gemma-4-12B-it` does not exist, the command downloads the default repositories `akhilaaa3/Jev-Omni` and `google/gemma-4-12B-it` into those directories first. An interrupted download can be rerun; the Hugging Face download is resumed and the existing files are reused.
+
 ```bash
 python -m pip install -r quantify/requirements.txt
 
 python quantify/quantize_jev_omni.py \
   --bits 8 \
-  --output /opt/models/jev-omni-int8 \
+  --source models/raw/jev-omni \
+  --base-model models/raw/gemma-4-12B-it \
+  --output models/jev-omni-int8 \
   --max-memory 0=28GiB \
   --max-memory 1=5GiB \
   --max-memory cpu=64GiB
 ```
+
+The same command can be run from inside `quantify/`; paths beginning with `models/` still resolve under the project root. The first run downloads several large files and requires network access and enough disk space for both raw models and the quantized output.
 
 For the smaller artifact:
 
 ```bash
 python quantify/quantize_jev_omni.py \
   --bits 4 \
-  --output /opt/models/jev-omni-int4 \
+  --source models/raw/jev-omni \
+  --base-model models/raw/gemma-4-12B-it \
+  --output models/jev-omni-int4 \
   --max-memory 0=28GiB \
   --max-memory 1=5GiB \
   --max-memory cpu=64GiB
